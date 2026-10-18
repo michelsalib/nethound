@@ -392,7 +392,7 @@ export function renderWho(
 			kv.push([
 				"",
 				c.yellow(
-					`its Claude session has ended: probably left behind (netbeagle kill ${l.port})`,
+					`its Claude session has ended: probably left behind (nethound kill ${l.port})`,
 				),
 			]);
 		if (p && snap) {

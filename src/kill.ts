@@ -1,4 +1,4 @@
-// netbeagle kill PORT: stop what listens on a port, after saying exactly what that is (which
+// nethound kill PORT: stop what listens on a port, after saying exactly what that is (which
 // worktree's dev server), and asking.
 
 import { spawnSync } from "node:child_process";
@@ -30,7 +30,7 @@ export async function killPort(
 	const home = homedir();
 	const ls = who(snap, port).listeners;
 	if (!ls.length) {
-		console.error(`netbeagle: nothing listens on ${port}`);
+		console.error(`nethound: nothing listens on ${port}`);
 		return 1;
 	}
 	const pids = new Set<number>();
@@ -67,7 +67,7 @@ export async function killPort(
 	if (!pids.size && !containers.size) return 1;
 	if (!o.yes) {
 		if (!process.stdin.isTTY) {
-			console.error("netbeagle: pass -y (--yes) to stop without asking");
+			console.error("nethound: pass -y (--yes) to stop without asking");
 			return 2;
 		}
 		const rl = createInterface({
@@ -116,7 +116,7 @@ export async function killPort(
 	if (stopped.length) console.log(c.green(`stopped ${stopped.join(", ")}`));
 	if (running.length) {
 		console.error(
-			`still running: ${running.join(", ")}${o.force ? "" : ` (netbeagle kill ${port} --force)`}`,
+			`still running: ${running.join(", ")}${o.force ? "" : ` (nethound kill ${port} --force)`}`,
 		);
 		return 1;
 	}

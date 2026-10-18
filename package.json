@@ -1,5 +1,5 @@
 {
-	"name": "netbeagle",
+	"name": "@michelsalib/nethound",
 	"version": "0.7.0",
 	"description": "See which process listens on each port, which interfaces reach it, and how everything on your machine connects",
 	"keywords": [
@@ -19,16 +19,16 @@
 	"author": "Michel Salib",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/michelsalib/netbeagle.git"
+		"url": "git+https://github.com/michelsalib/nethound.git"
 	},
-	"homepage": "https://github.com/michelsalib/netbeagle#readme",
-	"bugs": "https://github.com/michelsalib/netbeagle/issues",
+	"homepage": "https://github.com/michelsalib/nethound#readme",
+	"bugs": "https://github.com/michelsalib/nethound/issues",
 	"type": "module",
 	"bin": {
-		"netbeagle": "dist/netbeagle.js"
+		"nethound": "dist/nethound.js"
 	},
 	"files": [
-		"dist/netbeagle.js",
+		"dist/nethound.js",
 		"dist/SHA256SUMS"
 	],
 	"engines": {
@@ -36,7 +36,7 @@
 	},
 	"scripts": {
 		"dev": "bun src/cli.ts",
-		"build": "bun build src/cli.ts --target=node --minify --outfile dist/netbeagle.js",
+		"build": "bun build src/cli.ts --target=node --minify --outfile dist/nethound.js",
 		"build:bin": "bun scripts/build-binaries.ts",
 		"test": "bun test --timeout 30000",
 		"typecheck": "tsc",

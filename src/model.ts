@@ -1,4 +1,4 @@
-// What netbeagle reads from the machine, in one snapshot: everything else is computed from it,
+// What nethound reads from the machine, in one snapshot: everything else is computed from it,
 // so tests (and --json consumers) can work from a saved one.
 
 export type Family = 4 | 6;
@@ -66,7 +66,7 @@ export type SocketState =
 	| "CLOSE_WAIT"
 	| "LAST_ACK"
 	| "CLOSING"
-	/** A UDP socket bound with no peer: it receives from anyone, netbeagle treats it as listening. */
+	/** A UDP socket bound with no peer: it receives from anyone, nethound treats it as listening. */
 	| "UNCONN";
 
 export interface Socket {
@@ -80,7 +80,7 @@ export interface Socket {
 	uid?: number;
 	/** Linux only: the socket's inode, which ties it to the process holding it. */
 	inode?: number;
-	/** Unknown when the process belongs to another user and netbeagle runs without root. */
+	/** Unknown when the process belongs to another user and nethound runs without root. */
 	pid?: number;
 	/** No process holds it any more (TIME_WAIT): the kernel finishes closing it. */
 	orphan?: boolean;
@@ -166,7 +166,7 @@ export interface Snapshot {
 	dns: string[];
 	/** Our uid: sockets of other users have no process unless we are root. */
 	uid?: number;
-	/** Processes whose sockets netbeagle could not read (other users', without root). */
+	/** Processes whose sockets nethound could not read (other users', without root). */
 	hidden: number;
 }
 
@@ -178,5 +178,5 @@ const SECRET_ARG = new RegExp(
 	"gi",
 );
 
-/** A command line as netbeagle shows it: values of token- or password-like arguments masked. */
+/** A command line as nethound shows it: values of token- or password-like arguments masked. */
 export const maskCmd = (cmd: string) => cmd.replace(SECRET_ARG, "$1********");

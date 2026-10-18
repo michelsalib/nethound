@@ -1,4 +1,4 @@
-// What `netbeagle watch` draws: a header, the ports as a table, the selected one in detail, and
+// What `nethound watch` draws: a header, the ports as a table, the selected one in detail, and
 // the keys. Pure: lines of text from the state, cut to the terminal's width.
 
 import {
@@ -185,8 +185,8 @@ export function render(
 
 	// the header: what this is and where, and on the right how fresh it is
 	const left = s.snap
-		? `${c.bold("netbeagle watch")}  ${c.cyan(s.snap.hostname)}  ${c.dim(`${rows.length} port${rows.length === 1 ? "" : "s"}${s.filter ? ` matching "${s.filter}"` : ""}`)}`
-		: `${c.bold("netbeagle watch")}  ${c.dim("reading the machine…")}`;
+		? `${c.bold("nethound watch")}  ${c.cyan(s.snap.hostname)}  ${c.dim(`${rows.length} port${rows.length === 1 ? "" : "s"}${s.filter ? ` matching "${s.filter}"` : ""}`)}`
+		: `${c.bold("nethound watch")}  ${c.dim("reading the machine…")}`;
 	const right = s.snap ? c.dim(`updated ${age(s.updated, o.now)} ago`) : "";
 	const gap = width - visibleLength(left) - visibleLength(right);
 	out.push(cut(gap >= 2 ? left + " ".repeat(gap) + right : left, width));

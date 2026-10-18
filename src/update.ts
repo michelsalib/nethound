@@ -16,8 +16,8 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 
-export const REPO = "michelsalib/netbeagle";
-const REGISTRY = "https://registry.npmjs.org/netbeagle";
+export const REPO = "michelsalib/nethound";
+const REGISTRY = "https://registry.npmjs.org/@michelsalib/nethound";
 export const WEEK = 7 * 24 * 3600 * 1000;
 
 /**
@@ -27,7 +27,7 @@ export const WEEK = 7 * 24 * 3600 * 1000;
 export const compiled = (argv1 = process.argv[1] ?? "") =>
 	/[\\/](\$bunfs|~BUN)[\\/]/.test(argv1);
 
-/** The file this netbeagle runs from: the script, or the binary. */
+/** The file this nethound runs from: the script, or the binary. */
 export const selfPath = () =>
 	compiled() ? process.execPath : (process.argv[1] ?? process.execPath);
 
@@ -39,7 +39,7 @@ export function binaryName(
 	const os = { linux: "linux", darwin: "darwin", win32: "windows" }[platform];
 	if (!os || !["x64", "arm64"].includes(arch)) return undefined;
 	if (os === "windows" && arch !== "x64") return undefined;
-	return `netbeagle-${os}-${arch}${os === "windows" ? ".exe" : ""}`;
+	return `nethound-${os}-${arch}${os === "windows" ? ".exe" : ""}`;
 }
 
 /** Where the weekly check keeps what it learnt: $XDG_STATE_HOME (~/.local/state), or on Windows
@@ -52,10 +52,10 @@ export function stateFile(
 	const dir = windows
 		? env.LOCALAPPDATA || join(home, "AppData", "Local")
 		: env.XDG_STATE_HOME || join(home, ".local", "state");
-	return join(dir, "netbeagle", "update.json");
+	return join(dir, "nethound", "update.json");
 }
 
-/** How this copy of netbeagle was installed, which decides how to update it. */
+/** How this copy of nethound was installed, which decides how to update it. */
 export type InstallKind =
 	| "npx"
 	| "bunx"
@@ -69,16 +69,16 @@ export type InstallKind =
 
 export function installKind(script: string): InstallKind {
 	const p = script.replaceAll("\\", "/");
-	if (p.includes("/Cellar/netbeagle/")) return "brew";
-	if (/\/scoop\/apps\/netbeagle\//i.test(p)) return "scoop";
+	if (/\/Cellar\/(nethound|netbeagle)\//.test(p)) return "brew";
+	if (/\/scoop\/apps\/(nethound|netbeagle)\//i.test(p)) return "scoop";
 	if (/\/WinGet\/(Packages|Links)\//i.test(p)) return "winget";
 	if (p.includes("/_npx/")) return "npx";
 	if (p.includes("/bunx-")) return "bunx";
 	if (p.includes("/.bun/install/global/")) return "bun";
 	if (p.includes("/node_modules/")) return "npm";
-	// install.ps1 installs netbeagle.mjs (with netbeagle.cmd next to it)
-	if (p.endsWith("/netbeagle.mjs")) return "standalone";
-	// a checkout: src/cli.ts or dist/netbeagle.js; install.sh installs a file named plain `netbeagle`
+	// install.ps1 installs nethound.mjs (with nethound.cmd next to it); before 0.8.0, netbeagle.mjs
+	if (/\/(nethound|netbeagle)\.mjs$/.test(p)) return "standalone";
+	// a checkout: src/cli.ts or dist/nethound.js; install.sh installs a file named plain `nethound`
 	if (/\.[cm]?[jt]s$/.test(p)) return "dev";
 	return "standalone";
 }
@@ -86,24 +86,69 @@ export function installKind(script: string): InstallKind {
 export function upgradeCommand(kind: InstallKind): string {
 	switch (kind) {
 		case "npx":
-			return "npx netbeagle@latest";
+			return "npx @michelsalib/nethound@latest";
 		case "bunx":
-			return "bunx netbeagle@latest";
+			return "bunx @michelsalib/nethound@latest";
 		case "bun":
-			return "bun add -g netbeagle@latest";
+			return "bun add -g @michelsalib/nethound@latest";
 		case "npm":
-			return "npm install -g netbeagle@latest";
+			return "npm install -g @michelsalib/nethound@latest";
 		case "brew":
-			return "brew upgrade netbeagle";
+			return "brew upgrade nethound";
 		case "scoop":
-			return "scoop update netbeagle";
+			return "scoop update nethound";
 		case "winget":
-			return "winget upgrade netbeagle";
+			return "winget upgrade nethound";
 		case "standalone":
-			return "netbeagle upgrade";
+			return "nethound upgrade";
 		case "dev":
 			return "git pull && bun run build";
 	}
+}
+
+/**
+ * How to move to nethound, when this copy still runs under its name before 0.8.0, netbeagle (the npm
+ * package, the Homebrew formula, the Scoop app, or the file install.sh or install.ps1 wrote); undefined
+ * otherwise. 0.8.0 was published under both names, so that older copies could update and land here.
+ */
+export function renameNotice(
+	script: string,
+	windows = process.platform === "win32",
+): string | undefined {
+	const p = script.replaceAll("\\", "/");
+	if (
+		!/\/(node_modules|Cellar|scoop\/apps)\/netbeagle\/|\/netbeagle(\.\w+)?$/i.test(
+			p,
+		)
+	)
+		return undefined;
+	const command = (() => {
+		const kind = installKind(script);
+		switch (kind) {
+			case "npx":
+			case "bunx":
+				return `${kind} @michelsalib/nethound`;
+			case "bun":
+				return "bun remove -g netbeagle && bun add -g @michelsalib/nethound";
+			case "npm":
+				return "npm uninstall -g netbeagle && npm install -g @michelsalib/nethound";
+			case "brew":
+				return "brew uninstall netbeagle && brew install michelsalib/nethound/nethound";
+			case "scoop":
+				return "scoop uninstall netbeagle; scoop bucket add nethound https://github.com/michelsalib/scoop-nethound; scoop install nethound/nethound";
+			case "dev":
+				return undefined;
+			default:
+				// the same file under the new name: it updates itself from nethound's releases already
+				return windows
+					? `irm https://github.com/${REPO}/releases/latest/download/install.ps1 | iex; Remove-Item -Recurse '${dirname(script)}'`
+					: `mv '${script}' '${join(dirname(script), "nethound")}'`;
+		}
+	})();
+	return (
+		command &&
+		`netbeagle is now nethound: same tool, new name. Switch with:\n  ${command}`
+	);
 }
 
 /** True when version `a` is newer than `b`; only major.minor.patch counts. */
@@ -187,7 +232,7 @@ export function updateNotice(
 		}
 		if (!notify) return undefined;
 		writeState(stateFile, { ...readState(stateFile), notifiedAt: now });
-		return `netbeagle ${state.latest} is available (you have ${current}). Update with: ${upgradeCommand(kind)}`;
+		return `nethound ${state.latest} is available (you have ${current}). Update with: ${upgradeCommand(kind)}`;
 	} catch {
 		return undefined;
 	}
@@ -251,21 +296,21 @@ export function tarFile(tgz: Buffer, path: string): Buffer | undefined {
 
 export interface Release {
 	version: string;
-	/** The release file: netbeagle.js, the same bytes on GitHub and on npm, or a binary. */
+	/** The release file: nethound.js, the same bytes on GitHub and on npm, or a binary. */
 	data: Buffer;
 }
 
 /**
- * The latest netbeagle's `file` (netbeagle.js, or a binary such as netbeagle-linux-x64), checked twice:
- * against the release's SHA256SUMS on GitHub, and against npm. npm has the same netbeagle.js, byte for
+ * The latest nethound's `file` (nethound.js, or a binary such as nethound-linux-x64), checked twice:
+ * against the release's SHA256SUMS on GitHub, and against npm. npm has the same nethound.js, byte for
  * byte, and the same SHA256SUMS, which lists the binaries. Replacing it means compromising both
- * GitHub and npm. NETBEAGLE_REGISTRY and NETBEAGLE_BASE_URL point elsewhere (mirrors, tests).
+ * GitHub and npm. NETHOUND_REGISTRY and NETHOUND_BASE_URL point elsewhere (mirrors, tests).
  */
 export async function latestRelease(
 	env: Record<string, string | undefined>,
-	file = "netbeagle.js",
+	file = "nethound.js",
 ): Promise<Release> {
-	const registry = env.NETBEAGLE_REGISTRY ?? REGISTRY;
+	const registry = env.NETHOUND_REGISTRY ?? REGISTRY;
 	const meta = JSON.parse(
 		(await download(`${registry}/latest`)).toString(),
 	) as {
@@ -284,7 +329,7 @@ export async function latestRelease(
 		throw new Error(`unexpected answer from ${registry}/latest`);
 
 	const base =
-		env.NETBEAGLE_BASE_URL ??
+		env.NETHOUND_BASE_URL ??
 		`https://github.com/${REPO}/releases/download/v${version}`;
 	const data = await download(`${base}/${file}`);
 	const expected = sumFor(
@@ -304,11 +349,11 @@ export async function latestRelease(
 		throw new Error(
 			`the npm package for ${version} doesn't match its integrity`,
 		);
-	if (file === "netbeagle.js") {
-		const published = tarFile(tgz, "package/dist/netbeagle.js");
+	if (file === "nethound.js") {
+		const published = tarFile(tgz, "package/dist/nethound.js");
 		if (!published?.equals(data))
 			throw new Error(
-				`netbeagle.js on GitHub is not the one published on npm for ${version}`,
+				`nethound.js on GitHub is not the one published on npm for ${version}`,
 			);
 	} else {
 		const sums = tarFile(tgz, "package/dist/SHA256SUMS");
@@ -322,7 +367,7 @@ export async function latestRelease(
 
 /**
  * Put the new script in place of `target`: written beside it, then renamed over it, so a running
- * netbeagle is never half-written. install.sh rewrites the first line for Bun; that choice is kept.
+ * nethound is never half-written. install.sh rewrites the first line for Bun; that choice is kept.
  */
 export function replaceScript(target: string, script: Buffer): void {
 	const bun = readFileSync(target, "utf8").startsWith("#!/usr/bin/env bun");

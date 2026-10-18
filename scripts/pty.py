@@ -1,5 +1,5 @@
 # Runs a command in a pseudo-terminal, as a person at a terminal would, and prints what it wrote as
-# JSON [seconds, text] pairs, timed as it happened. Used by the tests of netbeagle watch.
+# JSON [seconds, text] pairs, timed as it happened. Used by the tests of nethound watch.
 #   python3 -I scripts/pty.py COLS ROWS STEPS_JSON command [args...]
 # STEPS_JSON is a list of ["wait", text] (until the output shows text), ["sleep", seconds] and
 # ["send", keys]; once they are played, it waits for the command to exit.

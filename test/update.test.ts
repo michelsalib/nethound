@@ -1,4 +1,4 @@
-// The weekly update check, install.sh and `netbeagle upgrade`. Installs use a local
+// The weekly update check, install.sh and `nethound upgrade`. Installs use a local
 // file:// "release" built from the source, so nothing touches the network.
 import { beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -28,6 +28,7 @@ import {
 	latestRelease,
 	newer,
 	readState,
+	renameNotice,
 	replaceBinary,
 	replaceScript,
 	sumFor,
@@ -85,8 +86,8 @@ function fakeRelease(
 		files?: Record<string, Buffer | string>;
 	} = {},
 ): Record<string, string> {
-	const dir = mkdtempSync(join(tmpdir(), "netbeagle-release-"));
-	const files = { "netbeagle.js": script, ...opts.files };
+	const dir = mkdtempSync(join(tmpdir(), "nethound-release-"));
+	const files = { "nethound.js": script, ...opts.files };
 	for (const [name, data] of Object.entries(files))
 		writeFileSync(join(dir, name), data);
 	const sums = Object.entries(files)
@@ -95,24 +96,24 @@ function fakeRelease(
 	writeFileSync(join(dir, "SHA256SUMS"), opts.sums ?? sums);
 	const pkgTgz = tgz({
 		"package/package.json": "{}",
-		"package/dist/netbeagle.js": opts.npm ?? script,
+		"package/dist/nethound.js": opts.npm ?? script,
 		"package/dist/SHA256SUMS": opts.npmSums ?? sums,
 	});
-	writeFileSync(join(dir, "netbeagle.tgz"), pkgTgz);
+	writeFileSync(join(dir, "nethound.tgz"), pkgTgz);
 	mkdirSync(join(dir, "registry"));
 	writeFileSync(
 		join(dir, "registry", "latest"),
 		JSON.stringify({
 			version: opts.version ?? "9.9.9",
 			dist: {
-				tarball: pathToFileURL(join(dir, "netbeagle.tgz")).href,
+				tarball: pathToFileURL(join(dir, "nethound.tgz")).href,
 				integrity: `sha512-${sha("sha512", pkgTgz, "base64")}`,
 			},
 		}),
 	);
 	return {
-		NETBEAGLE_BASE_URL: pathToFileURL(dir).href,
-		NETBEAGLE_REGISTRY: pathToFileURL(join(dir, "registry")).href,
+		NETHOUND_BASE_URL: pathToFileURL(dir).href,
+		NETHOUND_REGISTRY: pathToFileURL(join(dir, "registry")).href,
 	};
 }
 
@@ -127,7 +128,7 @@ describe("verified upgrades", () => {
 	test("refuses a checksum mismatch", () =>
 		expect(
 			latestRelease(
-				fakeRelease(script, { sums: `${"0".repeat(64)}  netbeagle.js\n` }),
+				fakeRelease(script, { sums: `${"0".repeat(64)}  nethound.js\n` }),
 			),
 		).rejects.toThrow("checksum mismatch"));
 	test("refuses a GitHub file that npm didn't publish", () =>
@@ -136,38 +137,38 @@ describe("verified upgrades", () => {
 		).rejects.toThrow("not the one published on npm"));
 	test("a binary, listed in npm's SHA256SUMS too", async () => {
 		const bin = Buffer.from("\x7fELF binary");
-		const files = { "netbeagle-linux-x64": bin };
+		const files = { "nethound-linux-x64": bin };
 		const r = await latestRelease(
 			fakeRelease(script, { files }),
-			"netbeagle-linux-x64",
+			"nethound-linux-x64",
 		);
 		expect(r.data).toEqual(bin);
 		await expect(
 			latestRelease(
 				fakeRelease(script, {
 					files,
-					npmSums: `${"0".repeat(64)}  netbeagle-linux-x64\n`,
+					npmSums: `${"0".repeat(64)}  nethound-linux-x64\n`,
 				}),
-				"netbeagle-linux-x64",
+				"nethound-linux-x64",
 			),
 		).rejects.toThrow("not the one npm lists");
 		await expect(
-			latestRelease(fakeRelease(script), "netbeagle-linux-x64"),
+			latestRelease(fakeRelease(script), "nethound-linux-x64"),
 		).rejects.toThrow(); // not in that release
 	});
 	test("binary names, and telling a binary from a script", () => {
-		expect(binaryName("linux", "x64")).toBe("netbeagle-linux-x64");
-		expect(binaryName("darwin", "arm64")).toBe("netbeagle-darwin-arm64");
-		expect(binaryName("win32", "x64")).toBe("netbeagle-windows-x64.exe");
+		expect(binaryName("linux", "x64")).toBe("nethound-linux-x64");
+		expect(binaryName("darwin", "arm64")).toBe("nethound-darwin-arm64");
+		expect(binaryName("win32", "x64")).toBe("nethound-windows-x64.exe");
 		expect(binaryName("win32", "arm64")).toBeUndefined();
 		expect(binaryName("freebsd", "x64")).toBeUndefined();
-		expect(compiled("/$bunfs/root/netbeagle")).toBe(true);
-		expect(compiled("B:\\~BUN\\root\\netbeagle.exe")).toBe(true);
-		expect(compiled("/home/u/.local/bin/netbeagle")).toBe(false);
+		expect(compiled("/$bunfs/root/nethound")).toBe(true);
+		expect(compiled("B:\\~BUN\\root\\nethound.exe")).toBe(true);
+		expect(compiled("/home/u/.local/bin/nethound")).toBe(false);
 	});
 	test("replaceBinary keeps the mode; on Windows the old one moves aside", () => {
-		const dir = mkdtempSync(join(tmpdir(), "netbeagle-bin-"));
-		const target = join(dir, "netbeagle.exe");
+		const dir = mkdtempSync(join(tmpdir(), "nethound-bin-"));
+		const target = join(dir, "nethound.exe");
 		writeFileSync(target, "old");
 		chmodSync(target, 0o755);
 		replaceBinary(target, Buffer.from("new"), true);
@@ -180,23 +181,23 @@ describe("verified upgrades", () => {
 	});
 	test("refuses plain http", () =>
 		expect(
-			latestRelease({ NETBEAGLE_REGISTRY: "http://registry.example" }),
+			latestRelease({ NETHOUND_REGISTRY: "http://registry.example" }),
 		).rejects.toThrow("only https is allowed"));
 	test("download refuses other schemes", () =>
 		expect(download("ftp://x/y")).rejects.toThrow("only https"));
 	test("SHA256SUMS lines, with or without the binary-mode star", () => {
-		expect(sumFor("AB  netbeagle.js\ncd  install.sh\n", "netbeagle.js")).toBe(
+		expect(sumFor("AB  nethound.js\ncd  install.sh\n", "nethound.js")).toBe(
 			"ab",
 		);
-		expect(sumFor("ab *netbeagle.js\r\n", "netbeagle.js")).toBe("ab");
-		expect(sumFor("ab  other.js\n", "netbeagle.js")).toBeUndefined();
+		expect(sumFor("ab *nethound.js\r\n", "nethound.js")).toBe("ab");
+		expect(sumFor("ab  other.js\n", "nethound.js")).toBeUndefined();
 	});
 
 	// npm starts slowly on a cold Windows runner
 	test("tarFile reads what npm pack writes", () => {
-		const dir = mkdtempSync(join(tmpdir(), "netbeagle-pack-"));
+		const dir = mkdtempSync(join(tmpdir(), "nethound-pack-"));
 		mkdirSync(join(dir, "dist"));
-		writeFileSync(join(dir, "dist", "netbeagle.js"), script);
+		writeFileSync(join(dir, "dist", "nethound.js"), script);
 		writeFileSync(
 			join(dir, "package.json"),
 			JSON.stringify({ name: "pack-test", version: "1.0.0", files: ["dist"] }),
@@ -208,7 +209,7 @@ describe("verified upgrades", () => {
 		});
 		expect(r.status).toBe(0);
 		const packed = readFileSync(join(dir, r.stdout.trim()));
-		expect(tarFile(packed, "package/dist/netbeagle.js")?.toString()).toBe(
+		expect(tarFile(packed, "package/dist/nethound.js")?.toString()).toBe(
 			script,
 		);
 		expect(tarFile(packed, "package/nope")).toBeUndefined();
@@ -218,8 +219,8 @@ describe("verified upgrades", () => {
 		"replaceScript keeps the file's mode and install.sh's choice of Bun",
 		() => {
 			const target = join(
-				mkdtempSync(join(tmpdir(), "netbeagle-bin-")),
-				"netbeagle",
+				mkdtempSync(join(tmpdir(), "nethound-bin-")),
+				"nethound",
 			);
 			writeFileSync(target, "#!/usr/bin/env bun\nold\n");
 			chmodSync(target, 0o755);
@@ -234,50 +235,108 @@ describe("verified upgrades", () => {
 
 describe("installKind", () => {
 	const cases: [string, string][] = [
-		["/opt/homebrew/Cellar/netbeagle/0.4.0/bin/netbeagle", "brew"],
-		["C:\\Users\\u\\scoop\\apps\\netbeagle\\current\\netbeagle.exe", "scoop"],
+		["/opt/homebrew/Cellar/nethound/0.4.0/bin/nethound", "brew"],
+		["C:\\Users\\u\\scoop\\apps\\nethound\\current\\nethound.exe", "scoop"],
 		[
-			"C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Packages\\MichelSalib.netbeagle_x\\netbeagle.exe",
+			"C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Packages\\MichelSalib.nethound_x\\nethound.exe",
 			"winget",
 		],
-		["/home/u/.local/bin/netbeagle", "standalone"],
-		["/home/u/.npm/_npx/0d1f/node_modules/netbeagle/dist/netbeagle.js", "npx"],
+		["/home/u/.local/bin/nethound", "standalone"],
 		[
-			"/tmp/bunx-1000-netbeagle@latest/node_modules/netbeagle/dist/netbeagle.js",
+			"/home/u/.npm/_npx/0d1f/node_modules/@michelsalib/nethound/dist/nethound.js",
+			"npx",
+		],
+		[
+			"/tmp/bunx-1000-nethound@latest/node_modules/@michelsalib/nethound/dist/nethound.js",
 			"bunx",
 		],
 		[
-			"/home/u/.bun/install/global/node_modules/netbeagle/dist/netbeagle.js",
+			"/home/u/.bun/install/global/node_modules/@michelsalib/nethound/dist/nethound.js",
 			"bun",
 		],
-		["/usr/lib/node_modules/netbeagle/dist/netbeagle.js", "npm"],
+		["/usr/lib/node_modules/@michelsalib/nethound/dist/nethound.js", "npm"],
 		[
-			"/home/u/.nvm/versions/node/v24/lib/node_modules/netbeagle/dist/netbeagle.js",
+			"/home/u/.nvm/versions/node/v24/lib/node_modules/@michelsalib/nethound/dist/nethound.js",
 			"npm",
 		],
-		["/home/u/.local/bin/netbeagle", "standalone"],
+		["/home/u/.local/bin/nethound", "standalone"],
+		[
+			"C:\\Users\\u\\AppData\\Local\\Programs\\nethound\\nethound.mjs",
+			"standalone",
+		],
+		[
+			"C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\@michelsalib\\nethound\\dist\\nethound.js",
+			"npm",
+		],
+		[
+			"C:\\Users\\u\\AppData\\Local\\npm-cache\\_npx\\1a2b\\node_modules\\@michelsalib\\nethound\\dist\\nethound.js",
+			"npx",
+		],
+		["/home/u/projects/nethound/src/cli.ts", "dev"],
+		["/home/u/projects/nethound/dist/nethound.js", "dev"],
+		// installed as netbeagle, before 0.8.0
+		["/opt/homebrew/Cellar/netbeagle/0.8.0/bin/netbeagle", "brew"],
+		["C:\\Users\\u\\scoop\\apps\\netbeagle\\current\\netbeagle.exe", "scoop"],
+		["/usr/lib/node_modules/netbeagle/dist/netbeagle.js", "npm"],
 		[
 			"C:\\Users\\u\\AppData\\Local\\Programs\\netbeagle\\netbeagle.mjs",
 			"standalone",
 		],
-		[
-			"C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\netbeagle\\dist\\netbeagle.js",
-			"npm",
-		],
-		[
-			"C:\\Users\\u\\AppData\\Local\\npm-cache\\_npx\\1a2b\\node_modules\\netbeagle\\dist\\netbeagle.js",
-			"npx",
-		],
-		["/home/u/projects/netbeagle/src/cli.ts", "dev"],
-		["/home/u/projects/netbeagle/dist/netbeagle.js", "dev"],
 	];
 	for (const [path, kind] of cases)
 		test(`${kind}: ${path}`, () =>
 			expect(installKind(path)).toBe(kind as never));
 	test("commands", () => {
-		expect(upgradeCommand("npx")).toBe("npx netbeagle@latest");
-		expect(upgradeCommand("standalone")).toBe("netbeagle upgrade");
+		expect(upgradeCommand("npx")).toBe("npx @michelsalib/nethound@latest");
+		expect(upgradeCommand("standalone")).toBe("nethound upgrade");
 	});
+});
+
+describe("renameNotice", () => {
+	test("nothing under the new name, nor in a checkout", () => {
+		expect(renameNotice("/home/u/.local/bin/nethound")).toBeUndefined();
+		expect(
+			renameNotice(
+				"/usr/lib/node_modules/@michelsalib/nethound/dist/nethound.js",
+			),
+		).toBeUndefined();
+		expect(
+			renameNotice("/home/u/projects/netbeagle/dist/nethound.js"),
+		).toBeUndefined();
+	});
+	const cases: [string, string, boolean?][] = [
+		[
+			"/usr/lib/node_modules/netbeagle/dist/netbeagle.js",
+			"npm uninstall -g netbeagle && npm install -g @michelsalib/nethound",
+		],
+		[
+			"/home/u/.npm/_npx/0d1f/node_modules/netbeagle/dist/netbeagle.js",
+			"npx @michelsalib/nethound",
+		],
+		[
+			"/opt/homebrew/Cellar/netbeagle/0.8.0/bin/netbeagle",
+			"brew uninstall netbeagle && brew install michelsalib/nethound/nethound",
+		],
+		[
+			"C:\\Users\\u\\scoop\\apps\\netbeagle\\current\\netbeagle.exe",
+			"scoop install nethound/nethound",
+		],
+		[
+			"/home/u/.local/bin/netbeagle",
+			"mv '/home/u/.local/bin/netbeagle' '/home/u/.local/bin/nethound'",
+		],
+		[
+			"C:\\Users\\u\\AppData\\Local\\Programs\\netbeagle\\netbeagle.mjs",
+			"install.ps1 | iex; Remove-Item -Recurse",
+			true,
+		],
+	];
+	for (const [path, command, windows = false] of cases)
+		test(path, () => {
+			const notice = renameNotice(path, windows);
+			expect(notice).toStartWith("netbeagle is now nethound");
+			expect(notice).toContain(command);
+		});
 });
 
 test("newer", () => {
@@ -327,8 +386,8 @@ describe("decide", () => {
 });
 
 describe("updateNotice", () => {
-	const dir = mkdtempSync(join(tmpdir(), "netbeagle-update-"));
-	const script = join(dir, "netbeagle");
+	const dir = mkdtempSync(join(tmpdir(), "nethound-update-"));
+	const script = join(dir, "nethound");
 	writeFileSync(script, "");
 	const state = join(dir, "state", "update.json");
 	const now = 100 * WEEK;
@@ -338,7 +397,7 @@ describe("updateNotice", () => {
 		mkdirSync(dirname(state), { recursive: true });
 		writeFileSync(state, JSON.stringify({ checkedAt: now, latest: "9.0.0" }));
 		expect(updateNotice("0.1.0", script, state, now)).toBe(
-			"netbeagle 9.0.0 is available (you have 0.1.0). Update with: netbeagle upgrade",
+			"nethound 9.0.0 is available (you have 0.1.0). Update with: nethound upgrade",
 		);
 		expect(readState(state).notifiedAt).toBe(now);
 		expect(updateNotice("0.1.0", script, state, now + 1000)).toBeUndefined();
@@ -363,10 +422,10 @@ describe("updateNotice", () => {
 
 // install.sh is POSIX sh only
 describe.skipIf(process.platform === "win32")(
-	"install.sh and netbeagle upgrade",
+	"install.sh and nethound upgrade",
 	() => {
 		const root = join(import.meta.dir, "..");
-		const release = mkdtempSync(join(tmpdir(), "netbeagle-release-"));
+		const release = mkdtempSync(join(tmpdir(), "nethound-release-"));
 		const base = `file://${release}`;
 		// a home of its own, never the real one
 		const homeEnv = (home: string) => ({
@@ -381,7 +440,7 @@ describe.skipIf(process.platform === "win32")(
 		) =>
 			spawnSync(cmd, args, {
 				encoding: "utf8",
-				env: { ...process.env, NETBEAGLE_NO_UPDATE_CHECK: "1", ...env },
+				env: { ...process.env, NETHOUND_NO_UPDATE_CHECK: "1", ...env },
 			});
 
 		beforeAll(() => {
@@ -393,7 +452,7 @@ describe.skipIf(process.platform === "win32")(
 					"--target=node",
 					"--minify",
 					"--outfile",
-					join(release, "netbeagle.js"),
+					join(release, "nethound.js"),
 				],
 				{
 					cwd: root,
@@ -402,31 +461,31 @@ describe.skipIf(process.platform === "win32")(
 			);
 			expect(r.status).toBe(0);
 			const sum = createHash("sha256")
-				.update(readFileSync(join(release, "netbeagle.js")))
+				.update(readFileSync(join(release, "nethound.js")))
 				.digest("hex");
-			writeFileSync(join(release, "SHA256SUMS"), `${sum}  netbeagle.js\n`);
+			writeFileSync(join(release, "SHA256SUMS"), `${sum}  nethound.js\n`);
 			copyFileSync(join(root, "install.sh"), join(release, "install.sh"));
 		});
 
 		test("installs with completion, then upgrades in place", () => {
-			const home = mkdtempSync(join(tmpdir(), "netbeagle-bin-"));
+			const home = mkdtempSync(join(tmpdir(), "nethound-bin-"));
 			const dir = join(home, "bin");
 			const r = run("sh", [join(root, "install.sh")], {
-				NETBEAGLE_BASE_URL: base,
-				NETBEAGLE_INSTALL_DIR: dir,
+				NETHOUND_BASE_URL: base,
+				NETHOUND_INSTALL_DIR: dir,
 				...homeEnv(home),
 			});
 			expect(r.stderr).toBe("");
 			expect(r.stdout).toContain(
-				`installed netbeagle ${pkg.version} in ${dir} (runs on node)`,
+				`installed nethound ${pkg.version} in ${dir} (runs on node)`,
 			);
 			expect(r.stdout).toContain(`export PATH="${dir}:$PATH"`);
 			expect(
-				readFileSync(join(dir, "netbeagle"), "utf8").startsWith(
+				readFileSync(join(dir, "nethound"), "utf8").startsWith(
 					"#!/usr/bin/env node\n",
 				),
 			).toBe(true);
-			expect(run(join(dir, "netbeagle"), ["--version"]).stdout.trim()).toBe(
+			expect(run(join(dir, "nethound"), ["--version"]).stdout.trim()).toBe(
 				pkg.version,
 			);
 			expect(
@@ -437,44 +496,44 @@ describe.skipIf(process.platform === "win32")(
 						"share",
 						"bash-completion",
 						"completions",
-						"netbeagle",
+						"nethound",
 					),
 					"utf8",
 				),
-			).toContain("netbeagle __complete");
+			).toContain("nethound __complete");
 			expect(r.stdout).toContain("bash completion:");
 			expect(
 				existsSync(
-					join(home, ".config", "fish", "completions", "netbeagle.fish"),
+					join(home, ".config", "fish", "completions", "nethound.fish"),
 				),
 			).toBe(spawnSync("sh", ["-c", "command -v fish"]).status === 0);
 
 			// upgrade replaces the file in place, checked against SHA256SUMS and npm
-			const built = readFileSync(join(release, "netbeagle.js"));
+			const built = readFileSync(join(release, "nethound.js"));
 			writeFileSync(
-				join(dir, "netbeagle"),
-				afterFirstLine(readFileSync(join(dir, "netbeagle"), "utf8"), "// old"),
+				join(dir, "nethound"),
+				afterFirstLine(readFileSync(join(dir, "nethound"), "utf8"), "// old"),
 			);
-			const same = run(join(dir, "netbeagle"), ["upgrade"], {
+			const same = run(join(dir, "nethound"), ["upgrade"], {
 				...fakeRelease(built, { version: pkg.version }),
 				...homeEnv(home),
 			});
 			expect(same.stdout).toContain(
-				`netbeagle ${pkg.version} is the latest version`,
+				`nethound ${pkg.version} is the latest version`,
 			);
-			const u = run(join(dir, "netbeagle"), ["upgrade"], {
+			const u = run(join(dir, "nethound"), ["upgrade"], {
 				...fakeRelease(built),
 				...homeEnv(home),
 			});
 			expect(u.status).toBe(0);
 			// realpath: on macOS the temporary directory is a symlink into /private
 			expect(u.stdout).toContain(
-				`upgraded netbeagle ${pkg.version} to 9.9.9 in ${realpathSync(dir)}`,
+				`upgraded nethound ${pkg.version} to 9.9.9 in ${realpathSync(dir)}`,
 			);
-			expect(readFileSync(join(dir, "netbeagle"), "utf8")).not.toContain(
+			expect(readFileSync(join(dir, "nethound"), "utf8")).not.toContain(
 				"// old",
 			);
-			const bad = run(join(dir, "netbeagle"), ["upgrade"], {
+			const bad = run(join(dir, "nethound"), ["upgrade"], {
 				...fakeRelease(built, { npm: "console.log('evil')\n" }),
 				...homeEnv(home),
 			});
@@ -483,20 +542,20 @@ describe.skipIf(process.platform === "win32")(
 		});
 
 		test("refuses plain http and a malformed version", () => {
-			const home = mkdtempSync(join(tmpdir(), "netbeagle-bin-"));
+			const home = mkdtempSync(join(tmpdir(), "nethound-bin-"));
 			const env = {
-				NETBEAGLE_INSTALL_DIR: join(home, "bin"),
+				NETHOUND_INSTALL_DIR: join(home, "bin"),
 				...homeEnv(home),
 			};
 			const http = run("sh", [join(root, "install.sh")], {
 				...env,
-				NETBEAGLE_BASE_URL: "http://example.com",
+				NETHOUND_BASE_URL: "http://example.com",
 			});
 			expect(http.status).toBe(1);
 			expect(http.stderr).toContain("must start with https://");
 			const version = run("sh", [join(root, "install.sh")], {
 				...env,
-				NETBEAGLE_VERSION: "1.2; echo pwned",
+				NETHOUND_VERSION: "1.2; echo pwned",
 			});
 			expect(version.status).toBe(1);
 			expect(version.stderr).toContain("must look like 0.2.1");
@@ -505,14 +564,14 @@ describe.skipIf(process.platform === "win32")(
 
 		test("a download cut short runs nothing", () => {
 			const text = readFileSync(join(root, "install.sh"), "utf8");
-			const home = mkdtempSync(join(tmpdir(), "netbeagle-bin-"));
+			const home = mkdtempSync(join(tmpdir(), "nethound-bin-"));
 			const r = spawnSync("sh", ["-s"], {
 				input: text.slice(0, Math.floor(text.length * 0.9)),
 				encoding: "utf8",
 				env: {
 					...process.env,
-					NETBEAGLE_BASE_URL: base,
-					NETBEAGLE_INSTALL_DIR: join(home, "bin"),
+					NETHOUND_BASE_URL: base,
+					NETHOUND_INSTALL_DIR: join(home, "bin"),
 					...homeEnv(home),
 				},
 			});
@@ -522,21 +581,21 @@ describe.skipIf(process.platform === "win32")(
 		});
 
 		test("refuses a download that doesn't match SHA256SUMS", () => {
-			const bad = mkdtempSync(join(tmpdir(), "netbeagle-bad-"));
+			const bad = mkdtempSync(join(tmpdir(), "nethound-bad-"));
 			writeFileSync(
-				join(bad, "netbeagle.js"),
+				join(bad, "nethound.js"),
 				"#!/usr/bin/env node\nconsole.log('evil')\n",
 			);
 			copyFileSync(join(release, "SHA256SUMS"), join(bad, "SHA256SUMS"));
 			const dir = join(bad, "bin");
 			const r = run("sh", [join(root, "install.sh")], {
-				NETBEAGLE_BASE_URL: `file://${bad}`,
-				NETBEAGLE_INSTALL_DIR: dir,
+				NETHOUND_BASE_URL: `file://${bad}`,
+				NETHOUND_INSTALL_DIR: dir,
 				...homeEnv(bad),
 			});
 			expect(r.status).toBe(1);
 			expect(r.stderr).toContain("checksum mismatch");
-			expect(existsSync(join(dir, "netbeagle"))).toBe(false);
+			expect(existsSync(join(dir, "nethound"))).toBe(false);
 		});
 
 		// only Bun on PATH: the installed file must run on bun
@@ -552,16 +611,16 @@ describe.skipIf(process.platform === "win32")(
 		test.skipIf(!bun || !noNode(bunPath))(
 			"falls back to bun without node",
 			() => {
-				const dir = join(mkdtempSync(join(tmpdir(), "netbeagle-bun-")), "bin");
+				const dir = join(mkdtempSync(join(tmpdir(), "nethound-bun-")), "bin");
 				const r = run("sh", [join(root, "install.sh")], {
 					PATH: bunPath,
-					NETBEAGLE_BASE_URL: base,
-					NETBEAGLE_INSTALL_DIR: dir,
+					NETHOUND_BASE_URL: base,
+					NETHOUND_INSTALL_DIR: dir,
 					...homeEnv(dirname(dir)),
 				});
 				expect(r.stdout).toContain("(runs on bun)");
 				expect(
-					readFileSync(join(dir, "netbeagle"), "utf8").startsWith(
+					readFileSync(join(dir, "nethound"), "utf8").startsWith(
 						"#!/usr/bin/env bun\n",
 					),
 				).toBe(true);
@@ -576,10 +635,10 @@ describe.skipIf(process.platform === "win32")(
 );
 
 describe.skipIf(process.platform !== "win32")(
-	"install.ps1 and netbeagle upgrade on Windows",
+	"install.ps1 and nethound upgrade on Windows",
 	() => {
 		const root = join(import.meta.dir, "..");
-		const release = mkdtempSync(join(tmpdir(), "netbeagle-release-"));
+		const release = mkdtempSync(join(tmpdir(), "nethound-release-"));
 		const base = pathToFileURL(release).href;
 		const run = (
 			cmd: string,
@@ -589,7 +648,7 @@ describe.skipIf(process.platform !== "win32")(
 			spawnSync(cmd, args, {
 				encoding: "utf8",
 				shell: cmd.endsWith(".cmd"),
-				env: { ...process.env, NETBEAGLE_NO_UPDATE_CHECK: "1", ...env },
+				env: { ...process.env, NETHOUND_NO_UPDATE_CHECK: "1", ...env },
 			});
 		const install = (env: Record<string, string>) =>
 			run(
@@ -614,59 +673,59 @@ describe.skipIf(process.platform !== "win32")(
 					"--target=node",
 					"--minify",
 					"--outfile",
-					join(release, "netbeagle.js"),
+					join(release, "nethound.js"),
 				],
 				{ cwd: root, encoding: "utf8" },
 			);
 			expect(r.status).toBe(0);
 			const sum = createHash("sha256")
-				.update(readFileSync(join(release, "netbeagle.js")))
+				.update(readFileSync(join(release, "nethound.js")))
 				.digest("hex");
-			writeFileSync(join(release, "SHA256SUMS"), `${sum}  netbeagle.js\n`);
+			writeFileSync(join(release, "SHA256SUMS"), `${sum}  nethound.js\n`);
 			copyFileSync(join(root, "install.ps1"), join(release, "install.ps1"));
 		});
 
 		test("installs with completion, then upgrades in place", () => {
-			const dir = join(mkdtempSync(join(tmpdir(), "netbeagle-bin-")), "bin");
+			const dir = join(mkdtempSync(join(tmpdir(), "nethound-bin-")), "bin");
 			const r = install({
-				NETBEAGLE_BASE_URL: base,
-				NETBEAGLE_INSTALL_DIR: dir,
+				NETHOUND_BASE_URL: base,
+				NETHOUND_INSTALL_DIR: dir,
 			});
 			expect(r.stderr).toBe("");
 			expect(r.stdout).toContain(
-				`installed netbeagle ${pkg.version} in ${dir} (runs on node)`,
+				`installed nethound ${pkg.version} in ${dir} (runs on node)`,
 			);
 			expect(r.stdout).toContain(`SetEnvironmentVariable('Path'`);
-			const cmd = join(dir, "netbeagle.cmd");
+			const cmd = join(dir, "nethound.cmd");
 			expect(run(cmd, ["--version"]).stdout.trim()).toBe(pkg.version);
 
-			// upgrade replaces netbeagle.mjs in place, checked against SHA256SUMS and npm
-			const mjs = join(dir, "netbeagle.mjs");
+			// upgrade replaces nethound.mjs in place, checked against SHA256SUMS and npm
+			const mjs = join(dir, "nethound.mjs");
 			writeFileSync(mjs, afterFirstLine(readFileSync(mjs, "utf8"), "// old"));
 			const u = run(
 				cmd,
 				["upgrade"],
-				fakeRelease(readFileSync(join(release, "netbeagle.js"))),
+				fakeRelease(readFileSync(join(release, "nethound.js"))),
 			);
 			expect(u.status).toBe(0);
 			expect(u.stdout).toContain(
-				`upgraded netbeagle ${pkg.version} to 9.9.9 in ${realpathSync(dir)}`,
+				`upgraded nethound ${pkg.version} to 9.9.9 in ${realpathSync(dir)}`,
 			);
 			expect(readFileSync(mjs, "utf8")).not.toContain("// old");
 		});
 
 		test("refuses a download that doesn't match SHA256SUMS", () => {
-			const bad = mkdtempSync(join(tmpdir(), "netbeagle-bad-"));
-			writeFileSync(join(bad, "netbeagle.js"), "console.log('evil')\n");
+			const bad = mkdtempSync(join(tmpdir(), "nethound-bad-"));
+			writeFileSync(join(bad, "nethound.js"), "console.log('evil')\n");
 			copyFileSync(join(release, "SHA256SUMS"), join(bad, "SHA256SUMS"));
 			const dir = join(bad, "bin");
 			const r = install({
-				NETBEAGLE_BASE_URL: pathToFileURL(bad).href,
-				NETBEAGLE_INSTALL_DIR: dir,
+				NETHOUND_BASE_URL: pathToFileURL(bad).href,
+				NETHOUND_INSTALL_DIR: dir,
 			});
 			expect(r.status).toBe(1);
 			expect(r.stderr).toContain("checksum mismatch");
-			expect(existsSync(join(dir, "netbeagle.mjs"))).toBe(false);
+			expect(existsSync(join(dir, "nethound.mjs"))).toBe(false);
 		});
 	},
 );
@@ -676,11 +735,11 @@ describe.skipIf(!binaryName())("standalone binary: install and upgrade", () => {
 	const root = join(import.meta.dir, "..");
 	const name = binaryName() ?? "";
 	const windows = process.platform === "win32";
-	const release = mkdtempSync(join(tmpdir(), "netbeagle-release-"));
+	const release = mkdtempSync(join(tmpdir(), "nethound-release-"));
 	const run = (cmd: string, args: string[], env: Record<string, string> = {}) =>
 		spawnSync(cmd, args, {
 			encoding: "utf8",
-			env: { ...process.env, NETBEAGLE_NO_UPDATE_CHECK: "1", ...env },
+			env: { ...process.env, NETHOUND_NO_UPDATE_CHECK: "1", ...env },
 		});
 	let binary: Buffer;
 
@@ -706,13 +765,13 @@ describe.skipIf(!binaryName())("standalone binary: install and upgrade", () => {
 	}, 120_000);
 
 	test("installs without Node or Bun, then upgrades itself", () => {
-		const home = mkdtempSync(join(tmpdir(), "netbeagle-bin-"));
+		const home = mkdtempSync(join(tmpdir(), "nethound-bin-"));
 		const dir = join(home, "bin");
 		const env = {
-			NETBEAGLE_BASE_URL: pathToFileURL(release).href,
-			NETBEAGLE_INSTALL_DIR: dir,
-			NETBEAGLE_BINARY: "1",
-			NETBEAGLE_NO_COMPLETION: "1",
+			NETHOUND_BASE_URL: pathToFileURL(release).href,
+			NETHOUND_INSTALL_DIR: dir,
+			NETHOUND_BINARY: "1",
+			NETHOUND_NO_COMPLETION: "1",
 			HOME: home,
 		};
 		const r = windows
@@ -731,11 +790,11 @@ describe.skipIf(!binaryName())("standalone binary: install and upgrade", () => {
 			: run("sh", [join(root, "install.sh")], env);
 		expect(r.stderr).toBe("");
 		expect(r.stdout).toContain(
-			`installed netbeagle ${pkg.version} in ${dir} (standalone binary)`,
+			`installed nethound ${pkg.version} in ${dir} (standalone binary)`,
 		);
-		const exe = join(dir, windows ? "netbeagle.exe" : "netbeagle");
+		const exe = join(dir, windows ? "nethound.exe" : "nethound");
 		expect(run(exe, ["--version"]).stdout.trim()).toBe(pkg.version);
-		if (windows) expect(existsSync(join(dir, "netbeagle.cmd"))).toBe(false);
+		if (windows) expect(existsSync(join(dir, "nethound.cmd"))).toBe(false);
 
 		const files = { [name]: binary };
 		const bad = run(exe, ["upgrade"], {
@@ -755,7 +814,7 @@ describe.skipIf(!binaryName())("standalone binary: install and upgrade", () => {
 		expect(u.stderr).toBe("");
 		// native: also expands Windows short names (RUNNER~1), as the binary's own path does
 		expect(u.stdout).toContain(
-			`upgraded netbeagle ${pkg.version} to 9.9.9 in ${realpathSync.native(dir)}`,
+			`upgraded nethound ${pkg.version} to 9.9.9 in ${realpathSync.native(dir)}`,
 		);
 		expect(existsSync(`${exe}.old`)).toBe(windows);
 		expect(run(exe, ["--version"]).stdout.trim()).toBe(pkg.version);

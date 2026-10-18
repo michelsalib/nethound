@@ -1,5 +1,5 @@
-// Terminal driver for `netbeagle watch`: raw keys and mouse clicks in, full redraws out, on the alternate screen so
-// the user's scrollback is left as it was. Each refresh runs netbeagle itself in the background
+// Terminal driver for `nethound watch`: raw keys and mouse clicks in, full redraws out, on the alternate screen so
+// the user's scrollback is left as it was. Each refresh runs nethound itself in the background
 // (--snapshot), so reading the machine never freezes the screen: a couple of seconds on Windows. The
 // selected port is asked once whether it answers HTTP, in the background too; the others never are.
 
@@ -26,7 +26,7 @@ import { render, scrolled, tableRoom } from "./view.ts";
 const ENTER = `\x1b[?1049h\x1b[?25l${MOUSE_ON}`; // alternate screen, hide cursor, report the mouse
 const LEAVE = `${MOUSE_OFF}\x1b[?25h\x1b[?1049l`;
 
-/** How to run this netbeagle again: the binary itself, or the runtime and the script. */
+/** How to run this nethound again: the binary itself, or the runtime and the script. */
 const self = (): [string, string[]] =>
 	compiled()
 		? [process.execPath, []]
@@ -157,7 +157,7 @@ export function runWatch(o: WatchOptions): Promise<void> {
 								}
 							: denied
 								? {
-										text: `${denied} not yours: run netbeagle with sudo (or as administrator) to stop them`,
+										text: `${denied} not yours: run nethound with sudo (or as administrator) to stop them`,
 										error: true,
 									}
 								: {

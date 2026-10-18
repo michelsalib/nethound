@@ -1,5 +1,5 @@
 name: Bug report
-description: netbeagle shows something wrong, or a command fails
+description: nethound shows something wrong, or a command fails
 labels: [bug]
 body:
   - type: textarea
@@ -17,14 +17,14 @@ body:
   - type: input
     id: version
     attributes:
-      label: netbeagle version
-      description: The output of `netbeagle --version`
+      label: nethound version
+      description: The output of `nethound --version`
     validations:
       required: true
   - type: input
     id: system
     attributes:
       label: System
-      description: Distribution (or WSL), whether you ran it with sudo, docker or podman if any, and how you installed netbeagle (npm, install.sh, npx…)
+      description: Distribution (or WSL), whether you ran it with sudo, docker or podman if any, and how you installed nethound (npm, install.sh, npx…)
     validations:
       required: true

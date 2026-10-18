@@ -1,4 +1,4 @@
-// netbeagle doctor: what is wrong with how this machine listens, each with what is behind it and how
+// nethound doctor: what is wrong with how this machine listens, each with what is behind it and how
 // to fix it. Each rule is a function from the listeners to findings, so adding one is adding a
 // function to RULES.
 

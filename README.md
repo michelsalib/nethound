@@ -1,37 +1,37 @@
 <p align="center">
-  <img src="assets/logo.svg" width="128" height="128" alt="netbeagle logo: a friendly beagle peeking over a network switch, paws on its edge, two ports plugged in and one link light blinking">
+  <img src="assets/logo.svg" width="128" height="128" alt="nethound logo: a friendly beagle peeking over a network switch, paws on its edge, two ports plugged in and one link light blinking">
 </p>
 
-<h1 align="center">netbeagle</h1>
+<h1 align="center">nethound</h1>
 
 <p align="center">See which process (or container) listens on each port, who can reach it, who is connected to it, and how everything on your machine connects.</p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/netbeagle"><img src="https://img.shields.io/npm/v/netbeagle?color=a8521a" alt="npm version"></a>
-  <a href="https://github.com/michelsalib/netbeagle/actions/workflows/ci.yml"><img src="https://github.com/michelsalib/netbeagle/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/node/v/netbeagle" alt="Node version">
+  <a href="https://www.npmjs.com/package/@michelsalib/nethound"><img src="https://img.shields.io/npm/v/@michelsalib/nethound?color=a8521a" alt="npm version"></a>
+  <a href="https://github.com/michelsalib/nethound/actions/workflows/ci.yml"><img src="https://github.com/michelsalib/nethound/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/node/v/@michelsalib/nethound" alt="Node version">
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue" alt="Linux, macOS and Windows">
-  <a href="LICENSE"><img src="https://img.shields.io/npm/l/netbeagle" alt="MIT license"></a>
-  <a href="https://scorecard.dev/viewer/?uri=github.com/michelsalib/netbeagle"><img src="https://api.scorecard.dev/projects/github.com/michelsalib/netbeagle/badge" alt="OpenSSF Scorecard"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/@michelsalib/nethound" alt="MIT license"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/michelsalib/nethound"><img src="https://api.scorecard.dev/projects/github.com/michelsalib/nethound/badge" alt="OpenSSF Scorecard"></a>
 </p>
 
 What is on port 5432, a local postgres or the one in docker? Can my laptop's neighbours reach it, or only
 this machine? Which process keeps a connection open to that server, and through which interface and
-gateway does it leave? netbeagle answers those in one command, by reading what the system already
+gateway does it leave? nethound answers those in one command, by reading what the system already
 knows (`/proc` and `/sys` on Linux, `netstat` and `lsof` on macOS, PowerShell on Windows) and asking
 docker which container sits behind each published port.
 
 **Try it, nothing to install:**
 
 ```sh
-npx netbeagle             # every listening port
-npx netbeagle map         # how everything connects
-npx netbeagle who 5432    # what is on 5432
-npx netbeagle doctor      # what is exposed that shouldn't be
+npx @michelsalib/nethound             # every listening port
+npx @michelsalib/nethound map         # how everything connects
+npx @michelsalib/nethound who 5432    # what is on 5432
+npx @michelsalib/nethound doctor      # what is exposed that shouldn't be
 ```
 
 ```
-$ netbeagle doctor
+$ nethound doctor
 ! PostgreSQL on tcp 5432 is reachable from every interface
   container pg, bound to 0.0.0.0, ::
   any machine that can reach eth0 can try passwords, or log in where pg_hba.conf trusts, unless a firewall stops it
@@ -49,7 +49,7 @@ $ netbeagle doctor
 ```
 
 ```
-$ netbeagle
+$ nethound
 PORT      ADDRESS       REACHABLE FROM     CLIENTS  OWNER
 tcp 22    *             every interface    1        root's process (sudo to see it)
 udp 53    127.0.0.53    this machine only           systemd-resolve's process (sudo to see it)
@@ -59,7 +59,7 @@ tcp 8080  192.168.1.10  eth0                        node 300
 ```
 
 ```
-$ netbeagle map
+$ nethound map
 box
 
 listening on every interface
@@ -88,30 +88,30 @@ dns  127.0.0.53 (local resolver)
 
 ### Dev servers in several worktrees
 
-Two checkouts of the same app, each running `bun run dev`, look the same to `ps`: `node …/vite`. netbeagle
+Two checkouts of the same app, each running `bun run dev`, look the same to `ps`: `node …/vite`. nethound
 tells them apart by the git checkout and branch each runs in:
 
 ```
-$ netbeagle who 5173
+$ nethound who 5173
 tcp 5173  node 41207
   process    node /home/me/src/app-feature/node_modules/.bin/vite  (pid 41207, me)
   checkout   ~/src/app-feature  branch feature-x  (worktree)
   started by bun 41190 ← zsh 40122
   …
-$ netbeagle kill 5173 --tree
+$ nethound kill 5173 --tree
 tcp 5173  node 41207  app-feature (feature-x)  started by bun 41190
          and bun 41190  app-feature (feature-x)  started by zsh 40122
 stop them? [y/N] y
 stopped 41190, 41207
 ```
 
-`netbeagle watch` shows the same live, and stops the selected one with `k` (its process) or `K` (with the
+`nethound watch` shows the same live, and stops the selected one with `k` (its process) or `K` (with the
 `bun run dev`, `npm` or watcher that started it, so nothing starts it again; never your shell).
 
-Which of these is a web page? `netbeagle open` asks each port, and `netbeagle open PORT` opens one:
+Which of these is a web page? `nethound open` asks each port, and `nethound open PORT` opens one:
 
 ```console
-$ netbeagle open
+$ nethound open
 http://localhost:3000   page (302)                  node 41207  app-feature (feature-x)
 http://localhost:3002   API (404 application/json)  container mock-server
 http://localhost:16686  page                        container jaeger
@@ -119,82 +119,86 @@ http://localhost:16686  page                        container jaeger
 
 ## Install
 
-netbeagle is a single JavaScript file that runs on Node ≥ 20 or Bun, on Linux (WSL included), macOS and
+nethound is a single JavaScript file that runs on Node ≥ 20 or Bun, on Linux (WSL included), macOS and
 Windows. Without either, the installers fetch a standalone binary instead, which needs nothing.
 
 ```sh
-npx netbeagle map               # or: bunx netbeagle map, nothing to install
-npm install -g netbeagle        # or: bun add -g netbeagle
-curl -fsSL https://github.com/michelsalib/netbeagle/releases/latest/download/install.sh | sh
+npx @michelsalib/nethound map               # or: bunx @michelsalib/nethound map, nothing to install
+npm install -g @michelsalib/nethound        # or: bun add -g @michelsalib/nethound
+curl -fsSL https://github.com/michelsalib/nethound/releases/latest/download/install.sh | sh
 ```
 
 To pin a version, or to read the script before running it:
 
 ```sh
-curl -fsSL https://github.com/michelsalib/netbeagle/releases/download/v0.7.0/install.sh -o install.sh
+curl -fsSL https://github.com/michelsalib/nethound/releases/download/v0.7.0/install.sh -o install.sh
 less install.sh && sh install.sh
-gh attestation verify install.sh -R michelsalib/netbeagle   # optional: proves GitHub Actions built it
+gh attestation verify install.sh -R michelsalib/nethound   # optional: proves GitHub Actions built it
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://github.com/michelsalib/netbeagle/releases/latest/download/install.ps1 | iex
+irm https://github.com/michelsalib/nethound/releases/latest/download/install.ps1 | iex
 ```
 
 With a package manager, which installs the standalone binary:
 
 ```sh
-brew install michelsalib/netbeagle/netbeagle                    # Homebrew, macOS and Linux
-scoop bucket add netbeagle https://github.com/michelsalib/scoop-netbeagle
-scoop install netbeagle/netbeagle                               # Scoop, Windows
+brew install michelsalib/nethound/nethound                    # Homebrew, macOS and Linux
+scoop bucket add nethound https://github.com/michelsalib/scoop-nethound
+scoop install nethound/nethound                               # Scoop, Windows
 ```
 
-`install.sh` puts `netbeagle` in `~/.local/bin` (`NETBEAGLE_INSTALL_DIR` to change it, `NETBEAGLE_VERSION=0.7.0`
+`install.sh` puts `nethound` in `~/.local/bin` (`NETHOUND_INSTALL_DIR` to change it, `NETHOUND_VERSION=0.7.0`
 to pin a version), checks it against the release's `SHA256SUMS`, and runs it on Node, or on Bun when there
-is no Node ≥ 20. With neither, or with `NETBEAGLE_BINARY=1`, it installs the standalone binary for your
+is no Node ≥ 20. With neither, or with `NETHOUND_BINARY=1`, it installs the standalone binary for your
 system (Linux and macOS, x64 and arm64). `install.ps1` does the same on Windows, in
-`%LOCALAPPDATA%\Programs\netbeagle`: `netbeagle.mjs` and a `netbeagle.cmd` launcher, or `netbeagle.exe`.
+`%LOCALAPPDATA%\Programs\nethound`: `nethound.mjs` and a `nethound.cmd` launcher, or `nethound.exe`.
 Neither edits your `PATH`: they print what to run.
 
 **Completion.** `install.sh` and Homebrew also install bash and fish completion; `install.ps1` prints the
 line for PowerShell. See [Shell completion](#shell-completion).
 
-**Updates.** Once a week netbeagle asks the npm registry, in the background, whether a newer version
+**Formerly netbeagle.** Up to 0.7.0, nethound was called netbeagle (`npm install -g netbeagle`). A copy
+installed under that name updates to nethound like any other, then says after each command how to
+switch to the new name. Environment variables are now `NETHOUND_*`.
+
+**Updates.** Once a week nethound asks the npm registry, in the background, whether a newer version
 exists, and when there is one says so after a command, with the update command for how you installed it:
-`netbeagle upgrade` for `install.sh` and `install.ps1`, `brew upgrade netbeagle`, `scoop update netbeagle`,
-`npm install -g netbeagle@latest`, and so on. It stays quiet in scripts, CI, with `--json`, and with
-`NETBEAGLE_NO_UPDATE_CHECK=1`. `netbeagle upgrade` never runs anything it downloads: the new file must match
+`nethound upgrade` for `install.sh` and `install.ps1`, `brew upgrade nethound`, `scoop update nethound`,
+`npm install -g @michelsalib/nethound@latest`, and so on. It stays quiet in scripts, CI, with `--json`, and with
+`NETHOUND_NO_UPDATE_CHECK=1`. `nethound upgrade` never runs anything it downloads: the new file must match
 the release's `SHA256SUMS` on GitHub and be the one published on npm (for a binary, the `SHA256SUMS` npm
 has), so a tampered release would have to be tampered with on both. Then it replaces itself in one rename.
 
-The binaries are release files too (`netbeagle-linux-x64`, `netbeagle-linux-arm64`, `netbeagle-darwin-x64`,
-`netbeagle-darwin-arm64`, `netbeagle-windows-x64.exe`), listed in `SHA256SUMS` and attested like the rest;
+The binaries are release files too (`nethound-linux-x64`, `nethound-linux-arm64`, `nethound-darwin-x64`,
+`nethound-darwin-arm64`, `nethound-windows-x64.exe`), listed in `SHA256SUMS` and attested like the rest;
 see [SECURITY.md](SECURITY.md#verifying-a-release).
 
-On Linux and macOS, without root, netbeagle can't see other users' processes, so their sockets show no
-process; `sudo netbeagle` shows them all. Windows names every socket's process, but shows other users'
-command lines only in an administrator terminal. netbeagle only reads: see
-[what it does with your machine](SECURITY.md#what-netbeagle-does-with-your-machine).
+On Linux and macOS, without root, nethound can't see other users' processes, so their sockets show no
+process; `sudo nethound` shows them all. Windows names every socket's process, but shows other users'
+command lines only in an administrator terminal. nethound only reads: see
+[what it does with your machine](SECURITY.md#what-nethound-does-with-your-machine).
 
 ## Commands
 
 | Command | What it shows |
 |---|---|
-| `netbeagle` / `netbeagle list` | every listening port (TCP and UDP): the addresses it is bound to, who can reach it (this machine only, every interface, or the interfaces holding its address), how many clients are connected, and its owner: a process, or the docker container behind a published port |
-| `netbeagle who PORT` | what listens on `PORT`: its command line, or its container with the address and network inside; where it is reachable from; every client connected now, with its process when it runs here; and connections from this machine to `PORT` elsewhere. Exits 1 when there are none |
-| `netbeagle conns` | every connection, grouped by process: inbound (←) to its ports and outbound (→), with the process, container or route at the other end. `--all` adds sockets opening or closing |
-| `netbeagle interfaces` | every interface: kind (ethernet, wifi, bridge, veth, tun, wireguard…), state, addresses, routes, bridge ports, docker containers on it, traffic |
-| `netbeagle route HOST` | where packets to `HOST` go: this machine, a container, an attached network, or a gateway; with the interface, the route and the source address |
-| `netbeagle watch` | live: every port with its process, the **git checkout and branch** it runs in (or its directory), how long it has been up and its clients, refreshed every couple of seconds; ports that open or close are marked. Select one to see its command line and what started it; `o` opens it in the browser when it answers HTTP, `k` stops it, `K` stops it with what started it (`bun run dev`, `npm`, a watcher), `/` filters by branch, port or name. Click a port to select it, its URL to open it, scroll with the wheel, click the keys on the last line |
-| `netbeagle open [PORT]` | opens what listens on `PORT` in the browser (in WSL, Windows' browser) once it answers HTTP or HTTPS; alone, lists every port a browser can open, page or API, with what holds it. Databases and caches are never asked; `--no-probe` asks nothing and opens `http://localhost:PORT` as is. Exits 1 when nothing answers |
-| `netbeagle kill PORT` | stops what listens on `PORT`, after saying which process it is, in which checkout, started by what, and asking. `--tree` also stops what started it, `--force` kills at once, `-y` doesn't ask; a container is `docker stop`ped |
-| `netbeagle doctor` | what is wrong with how this machine listens, each with what is behind it and its fix: databases, caches, debuggers and the docker API reachable from other machines (dev servers too, as notes), and ports two programs share, with which one `localhost` reaches over IPv4 and over IPv6. Exits 1 on errors |
-| `netbeagle map` | the whole picture, interface by interface: what is open everywhere, what is bound to each interface, the containers behind each bridge, the connections leaving through each one, which local process talks to which, and the DNS servers |
-| `netbeagle completion bash\|zsh\|fish\|powershell` | a shell completion script (commands, options, the ports listening now) |
-| `netbeagle upgrade` | update an `install.sh` or `install.ps1` install; for others, prints the update command |
+| `nethound` / `nethound list` | every listening port (TCP and UDP): the addresses it is bound to, who can reach it (this machine only, every interface, or the interfaces holding its address), how many clients are connected, and its owner: a process, or the docker container behind a published port |
+| `nethound who PORT` | what listens on `PORT`: its command line, or its container with the address and network inside; where it is reachable from; every client connected now, with its process when it runs here; and connections from this machine to `PORT` elsewhere. Exits 1 when there are none |
+| `nethound conns` | every connection, grouped by process: inbound (←) to its ports and outbound (→), with the process, container or route at the other end. `--all` adds sockets opening or closing |
+| `nethound interfaces` | every interface: kind (ethernet, wifi, bridge, veth, tun, wireguard…), state, addresses, routes, bridge ports, docker containers on it, traffic |
+| `nethound route HOST` | where packets to `HOST` go: this machine, a container, an attached network, or a gateway; with the interface, the route and the source address |
+| `nethound watch` | live: every port with its process, the **git checkout and branch** it runs in (or its directory), how long it has been up and its clients, refreshed every couple of seconds; ports that open or close are marked. Select one to see its command line and what started it; `o` opens it in the browser when it answers HTTP, `k` stops it, `K` stops it with what started it (`bun run dev`, `npm`, a watcher), `/` filters by branch, port or name. Click a port to select it, its URL to open it, scroll with the wheel, click the keys on the last line |
+| `nethound open [PORT]` | opens what listens on `PORT` in the browser (in WSL, Windows' browser) once it answers HTTP or HTTPS; alone, lists every port a browser can open, page or API, with what holds it. Databases and caches are never asked; `--no-probe` asks nothing and opens `http://localhost:PORT` as is. Exits 1 when nothing answers |
+| `nethound kill PORT` | stops what listens on `PORT`, after saying which process it is, in which checkout, started by what, and asking. `--tree` also stops what started it, `--force` kills at once, `-y` doesn't ask; a container is `docker stop`ped |
+| `nethound doctor` | what is wrong with how this machine listens, each with what is behind it and its fix: databases, caches, debuggers and the docker API reachable from other machines (dev servers too, as notes), and ports two programs share, with which one `localhost` reaches over IPv4 and over IPv6. Exits 1 on errors |
+| `nethound map` | the whole picture, interface by interface: what is open everywhere, what is bound to each interface, the containers behind each bridge, the connections leaving through each one, which local process talks to which, and the DNS servers |
+| `nethound completion bash\|zsh\|fish\|powershell` | a shell completion script (commands, options, the ports listening now) |
+| `nethound upgrade` | update an `install.sh` or `install.ps1` install; for others, prints the update command |
 
-`netbeagle COMMAND --help` (or `netbeagle help COMMAND`) shows one command's usage, options and examples.
+`nethound COMMAND --help` (or `nethound help COMMAND`) shows one command's usage, options and examples.
 `if`, `ifaces`, `connections`, `graph` and `ls` are accepted too.
 
 Options: `--json`, `--tcp`, `--udp`, `-a, --all`, `--no-docker` (don't ask docker), `--show-secrets` (command
@@ -205,22 +209,22 @@ lines are shown with the values of `--token=`, `--password` and the like masked 
 `install.sh` and Homebrew set up bash and fish completion for you. Otherwise:
 
 ```sh
-eval "$(netbeagle completion bash)"                                 # in ~/.bashrc
-eval "$(netbeagle completion zsh)"                                  # in ~/.zshrc, after compinit
-netbeagle completion fish > ~/.config/fish/completions/netbeagle.fish
+eval "$(nethound completion bash)"                                 # in ~/.bashrc
+eval "$(nethound completion zsh)"                                  # in ~/.zshrc, after compinit
+nethound completion fish > ~/.config/fish/completions/nethound.fish
 ```
 
 In PowerShell, add this line to your profile (`notepad $PROFILE`):
 
 ```powershell
-netbeagle completion powershell | Out-String | Invoke-Expression
+nethound completion powershell | Out-String | Invoke-Expression
 ```
 
-Completion is dynamic: on each <kbd>Tab</kbd> the script asks `netbeagle` for candidates, so `netbeagle kill <Tab>`
-and `netbeagle who <Tab>` offer the ports listening right now, each with what holds it:
+Completion is dynamic: on each <kbd>Tab</kbd> the script asks `nethound` for candidates, so `nethound kill <Tab>`
+and `nethound who <Tab>` offer the ports listening right now, each with what holds it:
 
 ```
-$ netbeagle kill <Tab>
+$ nethound kill <Tab>
 3000  -- node 4127  app-feature (feature-x)
 5173  -- node 4200  app (main)
 5432  -- container pg
@@ -233,12 +237,12 @@ Each system is read its own way, into the same picture, so every command works t
 - **Linux**: sockets from `/proc/net/tcp`, `tcp6`, `udp` and `udp6`; IPv4 clients of a socket bound to `::`
   (`::ffff:1.2.3.4`) are shown as IPv4. Each socket's process is found through the `socket:[inode]` links
   in `/proc/PID/fd`. Without root, other users' processes can't be read: their sockets show the user
-  only, and `sudo netbeagle` shows them all. Interfaces from `/sys/class/net` (kind, state, bridge and
+  only, and `sudo nethound` shows them all. Interfaces from `/sys/class/net` (kind, state, bridge and
   its ports, traffic) and their addresses from `getifaddrs`; routes from the kernel's main table,
   `/proc/net/route` and `/proc/net/ipv6_route`.
 - **macOS**: every user's sockets from `netstat -an` (`tcp46` for a socket taking both families), and
   the process behind each from `lsof`: without root, only your own, so other users' show no process and
-  `sudo netbeagle` shows them all. Interfaces from `ifconfig -a` (bridge members included), their traffic
+  `sudo nethound` shows them all. Interfaces from `ifconfig -a` (bridge members included), their traffic
   from `netstat -ibn`, which one is Wi-Fi from `networksetup`; routes from `netstat -rn`, without the
   ARP entries and interface-scoped copies; processes from `ps`.
 - **Windows**: one PowerShell call. Sockets and their processes from `Get-NetTCPConnection` and
@@ -265,19 +269,19 @@ Each system is read its own way, into the same picture, so every command works t
 
 ## Status
 
-Linux (WSL included), macOS and Windows. Planned: more `netbeagle doctor` checks (no default route or
+Linux (WSL included), macOS and Windows. Planned: more `nethound doctor` checks (no default route or
 two of them, a VPN taking all traffic, DNS servers with no route), firewall rules, network namespaces
 (inside containers).
 
 ## The pack
 
-netbeagle has a sibling, built the same way: one small file for Node or Bun, or a standalone binary,
+nethound has a sibling, built the same way: one small file for Node or Bun, or a standalone binary,
 nothing to configure.
 
 | Tool | What it finds | Try it |
 |---|---|---|
-| **netbeagle** | which process or container listens on each port, who can reach it, and how everything on your machine connects | `npx netbeagle` |
-| **[envhound](https://github.com/michelsalib/envhound)** | which startup file (or registry key) sets each environment variable, and your `PATH` | `npx envhound` |
+| **nethound** | which process or container listens on each port, who can reach it, and how everything on your machine connects | `npx @michelsalib/nethound` |
+| **[envhound](https://github.com/michelsalib/envhound)** | which startup file (or registry key) sets each environment variable, and your `PATH` | `npx @michelsalib/envhound` |
 
 ## Development
 
@@ -287,12 +291,12 @@ bun run dev -- map          # run from source
 bun test                    # unit tests on the fixtures of each system, plus the built CLI on node on this machine
 bun run typecheck
 bun run lint                # Biome: formatting and lint
-bun run build               # dist/netbeagle.js, plain JS for node >= 20
+bun run build               # dist/nethound.js, plain JS for node >= 20
 ```
 
 `test/fixtures/root` is a small Linux machine as `/proc`, `/sys` and `/etc` show it, written by
 `scripts/fixture.py` (its docstring describes it); `test/fixtures/macos` holds what its commands print
-on a Mac, and `test/fixtures/windows` what netbeagle's PowerShell script prints on Windows. Source uses only `node:` APIs, so the build runs on
+on a Mac, and `test/fixtures/windows` what nethound's PowerShell script prints on Windows. Source uses only `node:` APIs, so the build runs on
 both Node and Bun.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for pull requests and releases.

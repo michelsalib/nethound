@@ -110,7 +110,7 @@ test("the app that launched a process, through bash -c and runners", () => {
 test.skipIf(windows)(
 	"a browser a Claude session left behind, its worktree removed since",
 	() => {
-		const top = mkdtempSync(join(tmpdir(), "netbeagle-origin-"));
+		const top = mkdtempSync(join(tmpdir(), "nethound-origin-"));
 		const ws = join(top, "ws");
 		mkdirSync(join(ws, "app", ".git"), { recursive: true });
 		writeFileSync(join(ws, "app", ".git", "HEAD"), "ref: refs/heads/main\n");
@@ -160,7 +160,7 @@ test.skipIf(windows)(
 test.skipIf(windows)(
 	"a symlinked directory on the way, as macOS's /var: still decoded",
 	() => {
-		const top = mkdtempSync(join(tmpdir(), "netbeagle-link-"));
+		const top = mkdtempSync(join(tmpdir(), "nethound-link-"));
 		mkdirSync(join(top, "real", "my.app"), { recursive: true });
 		symlinkSync(join(top, "real"), join(top, "linked"), "junction");
 		const encoded = join(top, "linked", "my.app").replace(/[^A-Za-z0-9]/g, "-");

@@ -75,7 +75,7 @@ w("proc/sys/kernel/osrelease", "6.8.0-generic\n")
 
 def proc(pid, comm, argv, uid, sockets, ppid=1, start=0, cwd=None):
     w("proc/%d/comm" % pid, comm + "\n")
-    # state, ppid, then 16 fields netbeagle skips, then starttime in clock ticks after boot
+    # state, ppid, then 16 fields nethound skips, then starttime in clock ticks after boot
     w("proc/%d/stat" % pid, "%d (%s) S %d %s %d %s\n" % (pid, comm, ppid, " ".join(["0"] * 17), start, " ".join(["0"] * 30)))
     if cwd:
         os.symlink(cwd, os.path.join(root, "proc/%d/cwd" % pid))
