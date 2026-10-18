@@ -136,3 +136,15 @@ jobs:
             exit 0
           fi
           sh scripts/update-package-repos.sh "${GITHUB_REF_NAME#v}" packages
+      # Then micheldev.com/nethound, which renders this README at the latest release: a dispatch makes
+      # it rebuild now rather than at its weekly run. SITE_DISPATCH_TOKEN, a release-environment
+      # secret, can only write to michelsalib/micheldev.com.
+      - name: Rebuild micheldev.com/nethound
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::SITE_DISPATCH_TOKEN is not set: micheldev.com/nethound updates at its weekly rebuild"
+            exit 0
+          fi
+          gh api repos/michelsalib/micheldev.com/dispatches -f event_type=project-released -f "client_payload[project]=nethound"
