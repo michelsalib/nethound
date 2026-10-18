@@ -55,6 +55,7 @@ import {
 	latestRelease,
 	newer,
 	type Release,
+	renameNotice,
 	replaceBinary,
 	replaceScript,
 	selfPath,
@@ -67,14 +68,14 @@ import { runWatch } from "./watch/terminal.ts";
 const TAGLINE =
 	"see what listens on each port, who reaches it, and how everything connects";
 
-let usageHint = "netbeagle --help";
+let usageHint = "nethound --help";
 
 function usage(message: string): number {
-	console.error(`netbeagle: ${message}\nsee: ${usageHint}`);
+	console.error(`nethound: ${message}\nsee: ${usageHint}`);
 	return 2;
 }
 
-/** A newer version, said once a week after a command. */
+/** A newer version, said once a week after a command; or that netbeagle is now nethound. */
 let notice: string | undefined;
 
 async function main(argv: string[]): Promise<number> {
@@ -108,18 +109,18 @@ async function main(argv: string[]): Promise<number> {
 			tree: { type: "boolean" },
 			force: { type: "boolean" },
 			yes: { type: "boolean", short: "y" },
-			// what netbeagle watch reads each time, from a netbeagle of its own: the raw snapshot
+			// what nethound watch reads each time, from a nethound of its own: the raw snapshot
 			snapshot: { type: "boolean" },
 			help: { type: "boolean", short: "h" },
 			version: { type: "boolean", short: "v" },
 		},
 	});
-	// the logo only for a person at a terminal; scripts get the plain text, e.g. $(netbeagle --version)
+	// the logo only for a person at a terminal; scripts get the plain text, e.g. $(nethound --version)
 	const art = process.stdout.isTTY;
 	const logo = () =>
 		banner(
 			[
-				`netbeagle ${pkg.version}`,
+				`nethound ${pkg.version}`,
 				"",
 				"see what listens on each",
 				"port, who reaches it, and",
@@ -145,7 +146,7 @@ async function main(argv: string[]): Promise<number> {
 		process.stdout.write(
 			art
 				? `${logo()}\n${overview()}`
-				: `netbeagle ${pkg.version}\n${TAGLINE}\n\n${overview()}`,
+				: `nethound ${pkg.version}\n${TAGLINE}\n\n${overview()}`,
 		);
 		return 0;
 	}
@@ -156,26 +157,32 @@ async function main(argv: string[]): Promise<number> {
 	const [given = "list", ...args] = positionals;
 	const command = ALIASES[given] ?? given;
 	if (!COMMAND_HELP[command]) return usage(`no command '${given}'`);
-	usageHint = `netbeagle ${command} --help`;
+	usageHint = `nethound ${command} --help`;
 	if (!["linux", "darwin", "win32"].includes(process.platform)) {
 		console.error(
-			`netbeagle runs on Linux, macOS and Windows, not ${process.platform}`,
+			`nethound runs on Linux, macOS and Windows, not ${process.platform}`,
 		);
 		return 2;
 	}
 
 	// only for a person at a terminal; never in scripts, CI, with --json, or in watch's own refreshes
 	const env = process.env;
+	const person =
+		process.stderr.isTTY && !values.json && !values.snapshot && !env.CI;
+	if (person) {
+		try {
+			notice = renameNotice(realpathSync(selfPath()));
+		} catch {}
+	}
 	if (
-		process.stderr.isTTY &&
-		!values.json &&
-		!values.snapshot &&
-		!env.CI &&
-		!env.NETBEAGLE_NO_UPDATE_CHECK &&
+		person &&
+		!env.NETHOUND_NO_UPDATE_CHECK &&
 		!env.NO_UPDATE_NOTIFIER &&
 		command !== "upgrade"
-	)
-		notice = updateNotice(pkg.version, selfPath(), stateFile());
+	) {
+		const update = updateNotice(pkg.version, selfPath(), stateFile());
+		notice = notice && update ? `${notice}\n\n${update}` : (notice ?? update);
+	}
 	if (command === "upgrade") return upgrade();
 	if (command === "completion") {
 		const shell = args[0];
@@ -188,7 +195,7 @@ async function main(argv: string[]): Promise<number> {
 	const tty = process.stdout.isTTY;
 	if (command === "watch") {
 		if (!process.stdin.isTTY || !tty)
-			return usage("watch needs a terminal: use netbeagle list in scripts");
+			return usage("watch needs a terminal: use nethound list in scripts");
 		await runWatch({
 			color: !process.env.NO_COLOR,
 			args: [
@@ -244,7 +251,7 @@ async function main(argv: string[]): Promise<number> {
 		case "who": {
 			const port = Number(args[0]?.replace(/^:/, ""));
 			if (!args[0] || !Number.isInteger(port) || port < 1 || port > 65535)
-				return usage("who takes a port number, e.g. netbeagle who 5432");
+				return usage("who takes a port number, e.g. nethound who 5432");
 			const r = who(snap, port);
 			print(
 				() => renderWho(r, { ...opts, home: homedir() }, snap),
@@ -280,14 +287,14 @@ async function main(argv: string[]): Promise<number> {
 			const host = args[0];
 			if (!host)
 				return usage(
-					"route takes a host name or an address, e.g. netbeagle route github.com",
+					"route takes a host name or an address, e.g. nethound route github.com",
 				);
 			let ip = host;
 			if (!isIP(host)) {
 				try {
 					ip = (await lookup(host)).address;
 				} catch {
-					console.error(`netbeagle: cannot resolve ${host}`);
+					console.error(`nethound: cannot resolve ${host}`);
 					return 1;
 				}
 			}
@@ -310,7 +317,7 @@ async function main(argv: string[]): Promise<number> {
 		case "kill": {
 			const port = Number(args[0]?.replace(/^:/, ""));
 			if (!args[0] || !Number.isInteger(port) || port < 1 || port > 65535)
-				return usage("kill takes a port number, e.g. netbeagle kill 3000");
+				return usage("kill takes a port number, e.g. nethound kill 3000");
 			return killPort(snap, port, {
 				tree: !!values.tree,
 				force: !!values.force,
@@ -321,7 +328,7 @@ async function main(argv: string[]): Promise<number> {
 		case "open": {
 			const port = Number(args[0]?.replace(/^:/, ""));
 			if (args[0] && (!Number.isInteger(port) || port < 1 || port > 65535))
-				return usage("open takes a port number, e.g. netbeagle open 3000");
+				return usage("open takes a port number, e.g. nethound open 3000");
 			if (!args[0] && values["no-probe"])
 				return usage(
 					"open lists the ports that answer HTTP, which means asking them: give a PORT to open it unchecked",
@@ -364,21 +371,21 @@ function portCandidates(): PortCandidate[] {
 }
 
 /**
- * Replaces this netbeagle with the latest release, checked against SHA256SUMS and against npm's copy,
+ * Replaces this nethound with the latest release, checked against SHA256SUMS and against npm's copy,
  * when it was installed with install.sh or install.ps1; other installs get the command to run.
  */
 async function upgrade(): Promise<number> {
 	const script = realpathSync(selfPath());
 	const kind = installKind(script);
 	const binary = compiled();
-	const file = binary ? binaryName() : "netbeagle.js";
+	const file = binary ? binaryName() : "nethound.js";
 	if (!file) {
-		console.error("netbeagle: no netbeagle binary is built for this platform");
+		console.error("nethound: no nethound binary is built for this platform");
 		return 1;
 	}
 	if (kind !== "standalone") {
 		console.log(
-			`This netbeagle was not installed with ${process.platform === "win32" ? "install.ps1" : "install.sh"}. Update it with:\n  ${upgradeCommand(kind)}`,
+			`This nethound was not installed with ${process.platform === "win32" ? "install.ps1" : "install.sh"}. Update it with:\n  ${upgradeCommand(kind)}`,
 		);
 		return 0;
 	}
@@ -387,18 +394,18 @@ async function upgrade(): Promise<number> {
 		release = await latestRelease(process.env, file);
 	} catch (e) {
 		console.error(
-			`netbeagle: ${e instanceof Error ? e.message : e}; nothing was changed`,
+			`nethound: ${e instanceof Error ? e.message : e}; nothing was changed`,
 		);
 		return 1;
 	}
 	if (!newer(release.version, pkg.version)) {
-		console.log(`netbeagle ${pkg.version} is the latest version`);
+		console.log(`nethound ${pkg.version} is the latest version`);
 		return 0;
 	}
 	if (binary) replaceBinary(script, release.data);
 	else replaceScript(script, release.data);
 	console.log(
-		`upgraded netbeagle ${pkg.version} to ${release.version} in ${dirname(script)}`,
+		`upgraded nethound ${pkg.version} to ${release.version} in ${dirname(script)}`,
 	);
 	return 0;
 }
@@ -416,7 +423,7 @@ main(process.argv.slice(2)).then(
 		)
 			process.exitCode = usage(e.message);
 		else {
-			console.error(`netbeagle: ${e instanceof Error ? e.message : String(e)}`);
+			console.error(`nethound: ${e instanceof Error ? e.message : String(e)}`);
 			process.exitCode = 1;
 		}
 	},

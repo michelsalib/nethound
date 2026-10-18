@@ -41,7 +41,7 @@ export const fixture = (containers: Container[] = [pg]) =>
 const recorded = (dir: string, file: string) =>
 	readFileSync(join(import.meta.dir, "fixtures", dir, file), "utf8");
 
-/** The Mac test/fixtures/macos describes, as its commands print it; netbeagle runs as uid 501. */
+/** The Mac test/fixtures/macos describes, as its commands print it; nethound runs as uid 501. */
 export const macFixture = (containers: Container[] = []) =>
 	collect({
 		platform: "darwin",
@@ -68,7 +68,7 @@ export const macFixture = (containers: Container[] = []) =>
 		hostname: "mac",
 	});
 
-/** The Windows machine test/fixtures/windows describes, as netbeagle's PowerShell prints it. */
+/** The Windows machine test/fixtures/windows describes, as nethound's PowerShell prints it. */
 export const windowsFixture = (containers: Container[] = []) =>
 	collect({
 		platform: "win32",

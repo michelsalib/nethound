@@ -6,11 +6,11 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const TARGETS: Record<string, string> = {
-	"netbeagle-linux-x64": "bun-linux-x64-baseline",
-	"netbeagle-linux-arm64": "bun-linux-arm64",
-	"netbeagle-darwin-x64": "bun-darwin-x64-baseline",
-	"netbeagle-darwin-arm64": "bun-darwin-arm64",
-	"netbeagle-windows-x64.exe": "bun-windows-x64-baseline",
+	"nethound-linux-x64": "bun-linux-x64-baseline",
+	"nethound-linux-arm64": "bun-linux-arm64",
+	"nethound-darwin-x64": "bun-darwin-x64-baseline",
+	"nethound-darwin-arm64": "bun-darwin-arm64",
+	"nethound-windows-x64.exe": "bun-windows-x64-baseline",
 };
 
 const out = process.argv[2] ?? join("dist", "bin");

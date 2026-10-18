@@ -487,7 +487,7 @@ export function map(snap: Snapshot): MapReport {
 	};
 }
 
-/** Sockets netbeagle could not tie to a process: other users', without root. */
+/** Sockets nethound could not tie to a process: other users', without root. */
 export const unowned = (snap: Snapshot) =>
 	snap.sockets.filter(
 		(s) => s.pid === undefined && !s.orphan && s.uid !== snap.uid,

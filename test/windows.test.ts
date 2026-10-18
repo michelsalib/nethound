@@ -1,4 +1,4 @@
-// Windows, from what netbeagle's PowerShell script prints: test/fixtures/windows.
+// Windows, from what nethound's PowerShell script prints: test/fixtures/windows.
 import { expect, test } from "bun:test";
 import { connections, listeners, routeTo, unowned } from "../src/analyze.ts";
 import { ownerLabel } from "../src/format.ts";

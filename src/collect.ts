@@ -12,7 +12,7 @@ import { type Run, run as system } from "./run.ts";
 import { collectWindows } from "./windows/collect.ts";
 
 export interface CollectOptions {
-	/** Default: the one netbeagle runs on. */
+	/** Default: the one nethound runs on. */
 	platform?: NodeJS.Platform;
 	/** Linux: where proc/, sys/ and etc/ are; "/" for the real machine. */
 	root?: string;

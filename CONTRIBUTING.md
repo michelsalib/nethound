@@ -1,4 +1,4 @@
-# Contributing to netbeagle
+# Contributing to nethound
 
 Bug reports, ideas and pull requests are welcome. For anything bigger than a fix, open an issue
 first so we can agree on the approach.
@@ -19,7 +19,7 @@ bun run lint                # Biome: formatting and lint; `bunx biome check --wr
 
 `test/fixtures/root` is a small machine as `/proc`, `/sys` and `/etc` show it, written by
 `scripts/fixture.py`: change the script, not the files, and run `python3 scripts/fixture.py`. CI checks
-the two agree. `test/fixtures/macos` is what each command netbeagle runs prints on a Mac, and
+the two agree. `test/fixtures/macos` is what each command nethound runs prints on a Mac, and
 `test/fixtures/windows/snapshot.json` what its PowerShell script prints on Windows; when a reader
 changes, record the new output on the real system, with your own addresses replaced.
 
@@ -39,7 +39,7 @@ changes, record the new output on the real system, with your own addresses repla
 3. The release workflow tests on every OS and builds the files, then waits for approval in the
    `release` environment. Approve it to publish to npm and create the GitHub release.
 4. Package managers: the publish job then opens a pull request in the Homebrew tap
-   (`michelsalib/homebrew-netbeagle`) and in the Scoop bucket (`michelsalib/scoop-netbeagle`), each
+   (`michelsalib/homebrew-nethound`) and in the Scoop bucket (`michelsalib/scoop-nethound`), each
    merged by its own install CI. It uses `PACKAGES_TOKEN`, a secret of the `release` environment: a
    fine-grained token limited to those two repositories, with Contents and Pull requests (read and
    write). Without it the job only warns, and the update is by hand:

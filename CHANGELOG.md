@@ -1,6 +1,18 @@
 # Changelog
 
-All notable changes to netbeagle. Versions follow [semantic versioning](https://semver.org).
+All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow [semantic versioning](https://semver.org).
+
+## Unreleased
+
+### Changed
+
+- netbeagle is now **nethound**: the command, the npm package
+  [`@michelsalib/nethound`](https://www.npmjs.com/package/@michelsalib/nethound), the repository
+  `michelsalib/nethound`, the Homebrew tap `michelsalib/nethound` and the Scoop bucket `scoop-nethound`.
+  Environment variables are `NETHOUND_*` (`NETHOUND_INSTALL_DIR`, `NETHOUND_NO_UPDATE_CHECK`...).
+- A copy installed as netbeagle (npm, Homebrew, Scoop, `install.sh` or `install.ps1`) updates to this
+  release under its old name, then says after each command how to switch: for `install.sh`, renaming
+  the file is enough.
 
 ## 0.7.0 (2026-10-16)
 

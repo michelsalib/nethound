@@ -4,7 +4,7 @@
 import type { Process, Snapshot } from "./model.ts";
 
 // What starts dev servers, and nothing else: an IDE, an agent or a tool written in node is a node
-// process too, and must never be part of a tree netbeagle stops.
+// process too, and must never be part of a tree nethound stops.
 // package runners, watchers and monorepo tools, by name
 const RUNNER =
 	/^(npm|npx|pnpm|pnpx|yarn|bunx|nodemon|tsx|ts-node|turbo|nx|lerna|concurrently|watchexec|air)$/i;
@@ -76,7 +76,7 @@ export function descendants(snap: Snapshot, pid: number): Process[] {
 /**
  * What stopping `pid` with its runners means: the topmost runner above it (bun run dev, npm, a
  * `sh -c` they started), never an interactive shell, a terminal, an IDE or another user's process,
- * nor netbeagle or what started it; then everything under that one. Top first.
+ * nor nethound or what started it; then everything under that one. Top first.
  */
 export function treeOf(
 	snap: Snapshot,

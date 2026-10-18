@@ -1,4 +1,4 @@
-// What `netbeagle watch` holds between keys and refreshes, and how each changes it: pure
+// What `nethound watch` holds between keys and refreshes, and how each changes it: pure
 // functions, so the terminal driver only draws and runs effects.
 
 import { type Listener, listeners } from "../analyze.ts";
@@ -44,7 +44,7 @@ export interface State {
 	signalled: number[];
 	/** When the last snapshot came. */
 	updated?: number;
-	/** netbeagle's own pid: never part of a tree to stop. */
+	/** nethound's own pid: never part of a tree to stop. */
 	self: number;
 	/** What each row answers over HTTP, by row key, once asked. */
 	web: Record<string, Web>;
@@ -199,7 +199,7 @@ function askStop(s: State, r: Row, tree: boolean): State {
 		return {
 			...s,
 			message: {
-				text: `${l.user ?? "another user"}'s process: run netbeagle with sudo (or as administrator) to see and stop it`,
+				text: `${l.user ?? "another user"}'s process: run nethound with sudo (or as administrator) to see and stop it`,
 				error: true,
 			},
 		};

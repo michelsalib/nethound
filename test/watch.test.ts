@@ -132,7 +132,7 @@ test("the screen: where each server runs, and the selected one in detail", () =>
 // a real terminal: the built CLI in a pseudo-terminal (Python's pty, not on Windows)
 const python = spawnSync("python3", ["--version"]).status === 0;
 test.skipIf(!python || process.platform === "win32")(
-	"netbeagle watch runs in a terminal and quits on q",
+	"nethound watch runs in a terminal and quits on q",
 	() => {
 		const root = join(import.meta.dir, "..");
 		const build = spawnSync("bun", ["run", "build"], {
@@ -141,7 +141,7 @@ test.skipIf(!python || process.platform === "win32")(
 		});
 		expect(build.status).toBe(0);
 		const steps = [
-			["wait", "netbeagle watch"],
+			["wait", "nethound watch"],
 			["wait", "PORT"],
 			["send", "q"],
 		];
@@ -154,7 +154,7 @@ test.skipIf(!python || process.platform === "win32")(
 				"30",
 				JSON.stringify(steps),
 				"node",
-				"dist/netbeagle.js",
+				"dist/nethound.js",
 				"watch",
 				"--no-docker",
 			],

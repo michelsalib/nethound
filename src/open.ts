@@ -1,4 +1,4 @@
-// netbeagle open [PORT]: open what listens on PORT in the browser, once it answered HTTP or HTTPS;
+// nethound open [PORT]: open what listens on PORT in the browser, once it answered HTTP or HTTPS;
 // without PORT, list every port a browser can open, with its URL and what holds it.
 
 import { homedir } from "node:os";
@@ -48,7 +48,7 @@ export async function openPort(
 				),
 			);
 		else if (!found.length)
-			console.error("netbeagle: nothing here answers HTTP");
+			console.error("nethound: nothing here answers HTTP");
 		else {
 			const widest = (f: (w: Web) => string) =>
 				Math.max(...found.map(([, w]) => f(w).length));
@@ -61,13 +61,13 @@ export async function openPort(
 					`${c.cyan(url(w).padEnd(urls))}  ${w.kind === "page" ? label : c.dim(label)}  ${owner(l, home)}`,
 				);
 			}
-			console.log(c.dim("\nnetbeagle open PORT opens one in the browser"));
+			console.log(c.dim("\nnethound open PORT opens one in the browser"));
 		}
 		return found.length ? 0 : 1;
 	}
 	const ls = who(snap, port).listeners.filter((l) => l.proto === "tcp");
 	if (!ls.length) {
-		console.error(`netbeagle: nothing listens on tcp ${port}`);
+		console.error(`nethound: nothing listens on tcp ${port}`);
 		return 1;
 	}
 	for (const l of ls) {
@@ -82,7 +82,7 @@ export async function openPort(
 		);
 		const error = await openUrl(w.url, l, snap.environment);
 		if (error) {
-			console.error(`netbeagle: ${error}`);
+			console.error(`nethound: ${error}`);
 			return 1;
 		}
 		return 0;
@@ -90,7 +90,7 @@ export async function openPort(
 	const l = ls[0] as Listener;
 	const what = notWeb(l);
 	console.error(
-		`netbeagle: tcp ${port} (${owner(l, home)}) ${
+		`nethound: tcp ${port} (${owner(l, home)}) ${
 			!what
 				? "doesn't answer HTTP or HTTPS"
 				: what.startsWith("port ")

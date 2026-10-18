@@ -1,12 +1,12 @@
 name: Feature request
-description: Something netbeagle should do
+description: Something nethound should do
 labels: [enhancement]
 body:
   - type: textarea
     id: problem
     attributes:
       label: The problem
-      description: What you were trying to find out about your machine's network, and why netbeagle didn't help.
+      description: What you were trying to find out about your machine's network, and why nethound didn't help.
     validations:
       required: true
   - type: textarea

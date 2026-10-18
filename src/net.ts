@@ -116,7 +116,7 @@ export function networkOf(a: Address): string {
 	return a.family === 4 ? out.join(".") : formatIPv6(out);
 }
 
-/** An address as a command prints it, as netbeagle keeps it: no %zone, IPv4-mapped IPv6 unwrapped. */
+/** An address as a command prints it, as nethound keeps it: no %zone, IPv4-mapped IPv6 unwrapped. */
 export function plainIP(ip: string): { family: Family; address: string } {
 	const a = ip.replace(/%.*$/, "").toLowerCase();
 	const mapped = a.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);

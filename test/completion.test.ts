@@ -86,36 +86,36 @@ describe.skipIf(process.platform === "win32")("generated scripts", () => {
 		).toBe(0),
 	);
 	test("bash completion end to end", () => {
-		// load the script with a stub `netbeagle`, then complete `netbeagle ki`
+		// load the script with a stub `nethound`, then complete `nethound ki`
 		const script = `
-      netbeagle() { bun "$NETBEAGLE_CLI" "$@"; }
+      nethound() { bun "$NETHOUND_CLI" "$@"; }
       ${completionScript("bash")}
-      COMP_WORDS=(netbeagle ki); COMP_CWORD=1; _netbeagle
+      COMP_WORDS=(nethound ki); COMP_CWORD=1; _nethound
       printf '%s\\n' "\${COMPREPLY[@]}"`;
 		const r = spawnSync("bash", ["-c", script], {
 			encoding: "utf8",
 			// the path through the environment: spliced into the script, a space would break it
 			env: {
 				...process.env,
-				NETBEAGLE_CLI: join(process.cwd(), "src", "cli.ts"),
+				NETHOUND_CLI: join(process.cwd(), "src", "cli.ts"),
 			},
 		});
 		expect(r.stdout.trim()).toBe("kill");
 	});
 });
 
-// a stub netbeagle.cmd on PATH, then PowerShell's own completion engine
+// a stub nethound.cmd on PATH, then PowerShell's own completion engine
 test.skipIf(process.platform !== "win32")(
 	"powershell completion end to end",
 	() => {
-		const dir = mkdtempSync(join(tmpdir(), "netbeagle-"));
+		const dir = mkdtempSync(join(tmpdir(), "nethound-"));
 		writeFileSync(
-			join(dir, "netbeagle.cmd"),
+			join(dir, "nethound.cmd"),
 			`@bun "${join(process.cwd(), "src", "cli.ts")}" %*\r\n`,
 		);
 		const script = `
     ${completionScript("powershell")}
-    foreach ($line in 'netbeagle ki', 'netbeagle kill --f', 'netbeagle --json ') {
+    foreach ($line in 'nethound ki', 'nethound kill --f', 'nethound --json ') {
       (TabExpansion2 $line $line.Length).CompletionMatches.CompletionText -join ','
     }`;
 		const r = spawnSync(

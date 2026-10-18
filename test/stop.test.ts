@@ -69,12 +69,12 @@ test("an agent, an IDE or a tool in node is not a runner, nor the bash -c it sta
 	expect(pids(treeOf(snap, 60, 999))).toEqual([60]);
 });
 
-test("never netbeagle or what started it; never another user's runner", () => {
+test("never nethound or what started it; never another user's runner", () => {
 	const snap = machine([
 		p(20, 1, "bun", "bun run dev"),
 		p(30, 20, "node", "node server.js"),
-		// netbeagle, started by the same bun run (a "watch" script)
-		p(40, 20, "node", "node dist/netbeagle.js watch"),
+		// nethound, started by the same bun run (a "watch" script)
+		p(40, 20, "node", "node dist/nethound.js watch"),
 		p(50, 1, "pnpm", "pnpm dev", 0),
 		p(60, 50, "node", "node api.js"),
 	]);

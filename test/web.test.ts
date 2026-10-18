@@ -141,7 +141,7 @@ const openssl = spawnSync("openssl", ["version"]).status === 0;
 test.skipIf(!openssl)(
 	"HTTPS with a certificate nobody trusts: checked, not turned off, and still found",
 	async () => {
-		const dir = mkdtempSync(join(tmpdir(), "netbeagle-tls-"));
+		const dir = mkdtempSync(join(tmpdir(), "nethound-tls-"));
 		const [key, cert] = [join(dir, "key.pem"), join(dir, "cert.pem")];
 		const made = spawnSync("openssl", [
 			"req",

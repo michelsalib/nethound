@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { checkoutOf } from "../src/git.ts";
 
 // a main checkout on main, a linked worktree on feature-x, a detached one, and a directory outside
-const top = mkdtempSync(join(tmpdir(), "netbeagle-git-"));
+const top = mkdtempSync(join(tmpdir(), "nethound-git-"));
 const file = (path: string, text: string) => {
 	mkdirSync(join(top, path, ".."), { recursive: true });
 	writeFileSync(join(top, path), text);

@@ -1,4 +1,4 @@
-// netbeagle --help: an overview of the commands, and netbeagle COMMAND --help (or netbeagle help
+// nethound --help: an overview of the commands, and nethound COMMAND --help (or nethound help
 // COMMAND) for one command alone: its usage, what it does, the options it takes, examples.
 
 /** Every option, as the help lists it. */
@@ -28,12 +28,12 @@ export const OPTIONS: Record<string, [string, string]> = {
 	],
 	force: ["--force", "kill at once (SIGKILL) instead of asking it to stop"],
 	yes: ["-y, --yes", "without asking"],
-	help: ["-h, --help", "show help: netbeagle COMMAND --help for one command"],
+	help: ["-h, --help", "show help: nethound COMMAND --help for one command"],
 	version: ["-v, --version", "show the version"],
 };
 
 export interface CommandHelp {
-	/** Usage lines, without "netbeagle ". */
+	/** Usage lines, without "nethound ". */
 	usage: string[];
 	/** One line for the overview. */
 	summary: string;
@@ -52,10 +52,10 @@ export const COMMAND_HELP: Record<string, CommandHelp> = {
 		about: `Lists every port something listens on, with the process (or the docker container)
 behind it, the addresses it is bound to, and who can reach it: this machine only,
 every interface, or the interfaces holding its address. Ports docker publishes
-without a socket of their own are listed too. This is what netbeagle does with no
+without a socket of their own are listed too. This is what nethound does with no
 command.`,
 		options: ["json", "tcp", "udp", "no-docker"],
-		examples: ["netbeagle", "netbeagle list --tcp --json"],
+		examples: ["nethound", "nethound list --tcp --json"],
 	},
 	who: {
 		usage: ["who PORT"],
@@ -66,7 +66,7 @@ the interfaces that reach it; and every client connected right now, with its
 process when it runs here. Also lists connections from this machine to PORT
 elsewhere. Exits 1 when there are none.`,
 		options: ["json", "show-secrets", "no-docker"],
-		examples: ["netbeagle who 5432", "netbeagle who 443"],
+		examples: ["nethound who 5432", "nethound who 443"],
 	},
 	conns: {
 		usage: ["conns"],
@@ -74,9 +74,9 @@ elsewhere. Exits 1 when there are none.`,
 		about: `Lists the open connections of each process: inbound ones (←) to its listening
 ports and outbound ones (→). The other end is named when it is on this machine
 (its process, or the container behind the port) or in a container; otherwise
-netbeagle shows the interface and gateway the traffic leaves through.`,
+nethound shows the interface and gateway the traffic leaves through.`,
 		options: ["json", "all", "tcp", "udp", "no-docker"],
-		examples: ["netbeagle conns", "netbeagle conns --all"],
+		examples: ["nethound conns", "nethound conns --all"],
 	},
 	interfaces: {
 		usage: ["interfaces"],
@@ -85,7 +85,7 @@ netbeagle shows the interface and gateway the traffic leaves through.`,
 addresses, the routes going through each, the ports of a bridge and the docker
 containers on it, and the traffic so far.`,
 		options: ["json", "no-docker"],
-		examples: ["netbeagle interfaces", "netbeagle if --json"],
+		examples: ["nethound interfaces", "nethound if --json"],
 	},
 	route: {
 		usage: ["route HOST"],
@@ -94,7 +94,7 @@ containers on it, and the traffic so far.`,
 kernel's main routing table decides: this machine, a container, a network one of
 the interfaces is on, or a gateway; with the route and the source address.`,
 		options: ["json", "no-docker"],
-		examples: ["netbeagle route github.com", "netbeagle route 172.18.0.2"],
+		examples: ["nethound route github.com", "nethound route 172.18.0.2"],
 	},
 	watch: {
 		usage: ["watch"],
@@ -111,7 +111,7 @@ A second k forces it (SIGKILL); a container is docker stopped. The mouse works
 too: click a port to select it, its URL to open it, the wheel to move, and the
 keys on the last line to press them (shift-drag still selects text).`,
 		options: ["no-docker", "show-secrets", "no-probe"],
-		examples: ["netbeagle watch", "sudo netbeagle watch"],
+		examples: ["nethound watch", "sudo nethound watch"],
 	},
 	open: {
 		usage: ["open [PORT]"],
@@ -122,7 +122,7 @@ HTTP with its URL, whether it is a page or an API, and what holds it. Databases,
 caches and the like are never asked: Redis takes an HTTP request for an attack.
 Exits 1 when nothing answers.`,
 		options: ["json", "no-probe", "no-docker"],
-		examples: ["netbeagle open 3000", "netbeagle open"],
+		examples: ["nethound open 3000", "nethound open"],
 	},
 	kill: {
 		usage: ["kill PORT"],
@@ -133,7 +133,7 @@ it (bun run dev, npm, a watcher such as nodemon, never your shell), so nothing
 starts it again. A container is docker stopped. Exits 1 when something still
 runs after 3 seconds: --force kills it at once.`,
 		options: ["tree", "force", "yes", "no-docker"],
-		examples: ["netbeagle kill 3000", "netbeagle kill 5173 --tree -y"],
+		examples: ["nethound kill 3000", "nethound kill 5173 --tree -y"],
 	},
 	doctor: {
 		usage: ["doctor"],
@@ -144,7 +144,7 @@ other machines (dev servers too, as notes), and ports held by two programs, with
 which one localhost reaches over IPv4 and over IPv6. Firewall rules are not taken
 into account. Exits 1 when there are errors.`,
 		options: ["json", "no-docker"],
-		examples: ["netbeagle doctor", "sudo netbeagle doctor --json"],
+		examples: ["nethound doctor", "sudo nethound doctor --json"],
 	},
 	map: {
 		usage: ["map"],
@@ -154,7 +154,7 @@ its routes, the ports bound to it, the containers behind it, and the connections
 leaving through it; on the loopback, which local process talks to which. Ends
 with the DNS servers and the way to them.`,
 		options: ["json", "no-docker"],
-		examples: ["netbeagle map"],
+		examples: ["nethound map"],
 	},
 	completion: {
 		usage: ["completion SHELL"],
@@ -165,23 +165,23 @@ holds it. Load it from your shell's startup file (install.sh and Homebrew instal
 it for bash and fish).`,
 		options: [],
 		examples: [
-			'eval "$(netbeagle completion bash)"        # in ~/.bashrc',
-			'eval "$(netbeagle completion zsh)"         # in ~/.zshrc, after compinit',
-			"netbeagle completion fish | source        # in ~/.config/fish/config.fish",
-			"netbeagle completion powershell | Out-String | Invoke-Expression  # $PROFILE",
+			'eval "$(nethound completion bash)"        # in ~/.bashrc',
+			'eval "$(nethound completion zsh)"         # in ~/.zshrc, after compinit',
+			"nethound completion fish | source        # in ~/.config/fish/config.fish",
+			"nethound completion powershell | Out-String | Invoke-Expression  # $PROFILE",
 		],
 	},
 	upgrade: {
 		usage: ["upgrade"],
-		summary: "update netbeagle to the latest release",
-		about: `Replaces this netbeagle with the latest release when it was installed with
+		summary: "update nethound to the latest release",
+		about: `Replaces this nethound with the latest release when it was installed with
 install.sh or install.ps1 (the script or the standalone binary); the download
 must match the release's SHA256SUMS and the npm package. Other installs get the
-command to run (npm, bun, Homebrew, Scoop…). Once a week netbeagle also asks npm,
+command to run (npm, bun, Homebrew, Scoop…). Once a week nethound also asks npm,
 in the background, whether a newer version exists, and says so after a command;
-NETBEAGLE_NO_UPDATE_CHECK=1 turns that off.`,
+NETHOUND_NO_UPDATE_CHECK=1 turns that off.`,
 		options: [],
-		examples: ["netbeagle upgrade"],
+		examples: ["nethound upgrade"],
 	},
 };
 
@@ -209,7 +209,7 @@ export function overview(): string {
 	const entries = Object.values(COMMAND_HELP);
 	const w = Math.max(...entries.map((h) => (h.usage[0] ?? "").length));
 	return [
-		"Usage: netbeagle [COMMAND] [OPTIONS]",
+		"Usage: nethound [COMMAND] [OPTIONS]",
 		"",
 		"Commands:",
 		...entries.map((h) => `  ${(h.usage[0] ?? "").padEnd(w)}  ${h.summary}`),
@@ -217,13 +217,13 @@ export function overview(): string {
 		"Options:",
 		...optionLines(["json", "no-docker", "show-secrets", "version"]),
 		"",
-		"netbeagle COMMAND --help shows one command's usage, options and examples.",
+		"nethound COMMAND --help shows one command's usage, options and examples.",
 		process.platform === "win32"
 			? "Without an administrator terminal, other users' command lines are hidden."
 			: "Without root, sockets of other users' processes show no process: sudo shows them all.",
 		"",
 		"From the same pack: envhound, which startup file sets each environment variable.",
-		"  npx envhound",
+		"  npx @michelsalib/envhound",
 		"",
 	].join("\n");
 }
@@ -232,7 +232,7 @@ export function commandHelp(name: string): string | undefined {
 	const h = COMMAND_HELP[ALIASES[name] ?? name];
 	if (!h) return undefined;
 	return [
-		`Usage: ${h.usage.map((u) => `netbeagle ${u}`).join("\n       ")}`,
+		`Usage: ${h.usage.map((u) => `nethound ${u}`).join("\n       ")}`,
 		"",
 		h.about,
 		"",

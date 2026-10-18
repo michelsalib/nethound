@@ -1,6 +1,6 @@
 // Which ports a browser can open: each is asked for / over HTTP, then HTTPS, and what answers is a
 // page (HTML, or a redirect to one) or an API. Databases and the like are never asked: Redis takes an
-// HTTP request for an attack and logs it. And opening a URL in the browser, wherever netbeagle runs.
+// HTTP request for an attack and logs it. And opening a URL in the browser, wherever nethound runs.
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -90,7 +90,7 @@ function ask(
 			port,
 			path: "/",
 			method: "GET",
-			headers: { accept: "text/html,*/*", "user-agent": "netbeagle" },
+			headers: { accept: "text/html,*/*", "user-agent": "nethound" },
 			agent: false,
 		};
 		const req = secure ? https.request(options) : http.request(options);

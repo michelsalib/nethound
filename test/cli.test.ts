@@ -8,7 +8,7 @@ const root = join(import.meta.dir, "..");
 const hasNode = spawnSync("node", ["--version"]).status === 0;
 
 const run = (...args: string[]) =>
-	spawnSync("node", ["dist/netbeagle.js", ...args], {
+	spawnSync("node", ["dist/nethound.js", ...args], {
 		cwd: root,
 		encoding: "utf8",
 	});
@@ -21,32 +21,32 @@ beforeAll(() => {
 test.skipIf(!hasNode)("--version and --help", () => {
 	// piped: plain text, without the logo
 	expect(run("--version").stdout).toMatch(/^\d+\.\d+\.\d+\n$/);
-	expect(run("--help").stdout).toStartWith("netbeagle ");
+	expect(run("--help").stdout).toStartWith("nethound ");
 	expect(run("--help").stdout).not.toContain("▀");
 	expect(run("--help").stdout).toContain("who PORT");
 	// the sibling, from the same pack
-	expect(run("--help").stdout).toContain("npx envhound");
+	expect(run("--help").stdout).toContain("npx @michelsalib/envhound");
 	const help = run("who", "--help");
-	expect(help.stdout).toStartWith("Usage: netbeagle who PORT");
+	expect(help.stdout).toStartWith("Usage: nethound who PORT");
 	expect(help.stdout).toContain("--show-secrets");
-	expect(run("help", "if").stdout).toStartWith("Usage: netbeagle interfaces");
+	expect(run("help", "if").stdout).toStartWith("Usage: nethound interfaces");
 });
 
 test("banner puts the text beside the logo, or under it on a narrow terminal", () => {
-	const wide = banner(["netbeagle 1.2.3"], {
+	const wide = banner(["nethound 1.2.3"], {
 		color: false,
 		truecolor: false,
 		columns: 100,
 	});
-	expect(wide).toMatch(/\S +netbeagle 1\.2\.3\n/);
+	expect(wide).toMatch(/\S +nethound 1\.2\.3\n/);
 	expect(wide).not.toContain("\x1b[");
 	expect(
-		banner(["netbeagle 1.2.3"], {
+		banner(["nethound 1.2.3"], {
 			color: false,
 			truecolor: false,
 			columns: 40,
 		}),
-	).toEndWith("\n\n  netbeagle 1.2.3\n");
+	).toEndWith("\n\n  nethound 1.2.3\n");
 	const color = banner([], { color: true, truecolor: false });
 	expect(color).toContain("\x1b[38;5;173m");
 	// the watched port's link light blinks
@@ -61,7 +61,7 @@ test.skipIf(!hasNode)(
 	() => {
 		const r = run("who", "http");
 		expect(r.status).toBe(2);
-		expect(r.stderr).toContain("netbeagle who --help");
+		expect(r.stderr).toContain("nethound who --help");
 		expect(run("nope").status).toBe(2);
 		expect(run("--bogus").status).toBe(2);
 	},
@@ -104,7 +104,7 @@ test.skipIf(!hasNode)(
 		try {
 			const r = spawnSync(
 				"node",
-				["dist/netbeagle.js", "who", String(port), "--json", "--no-docker"],
+				["dist/nethound.js", "who", String(port), "--json", "--no-docker"],
 				{
 					cwd: root,
 					encoding: "utf8",

@@ -1,5 +1,5 @@
 // Which process owns each socket: /proc/PID/fd links to socket:[INODE]. Other users' fd
-// directories are unreadable without root; netbeagle counts them so it can say so.
+// directories are unreadable without root; nethound counts them so it can say so.
 
 import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { join } from "node:path";

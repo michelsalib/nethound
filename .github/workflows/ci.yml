@@ -46,12 +46,12 @@ jobs:
       - run: bun run lint
       - run: bun test --coverage --timeout 30000
       - run: bun run build
-      - run: node dist/netbeagle.js --version
-      - run: node dist/netbeagle.js map
+      - run: node dist/nethound.js --version
+      - run: node dist/nethound.js map
       # the release files must be reproducible from the source: the same build twice
       - name: Build is deterministic
         if: runner.os == 'Linux'
-        run: cp dist/netbeagle.js /tmp/first.js && bun run build && cmp /tmp/first.js dist/netbeagle.js
+        run: cp dist/nethound.js /tmp/first.js && bun run build && cmp /tmp/first.js dist/nethound.js
       # the fixture is generated: it must match its script
       - name: Fixture is up to date
         if: runner.os == 'Linux'
@@ -65,11 +65,11 @@ jobs:
           bun run build:bin
           (cd dist/bin && (sha256sum * 2>/dev/null || shasum -a 256 *))
           case "$RUNNER_OS-$RUNNER_ARCH" in
-            Linux-X64) bin=netbeagle-linux-x64 ;;
-            Linux-ARM64) bin=netbeagle-linux-arm64 ;;
-            macOS-ARM64) bin=netbeagle-darwin-arm64 ;;
-            macOS-X64) bin=netbeagle-darwin-x64 ;;
-            Windows-X64) bin=netbeagle-windows-x64.exe ;;
+            Linux-X64) bin=nethound-linux-x64 ;;
+            Linux-ARM64) bin=nethound-linux-arm64 ;;
+            macOS-ARM64) bin=nethound-darwin-arm64 ;;
+            macOS-X64) bin=nethound-darwin-x64 ;;
+            Windows-X64) bin=nethound-windows-x64.exe ;;
           esac
           dist/bin/$bin --version
           dist/bin/$bin map > /dev/null

@@ -1,4 +1,4 @@
-// The mouse in `netbeagle watch`: the terminal reports clicks and the wheel (SGR mouse mode) among
+// The mouse in `nethound watch`: the terminal reports clicks and the wheel (SGR mouse mode) among
 // the keys; they are taken out of what is typed and turned into a selection or a key press.
 
 import {
