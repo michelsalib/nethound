@@ -62,13 +62,6 @@ jobs:
         run: |
           mkdir release
           cp dist/nethound.js dist/bin/* install.sh install.ps1 release/
-          # 0.8.0 only, the rename: copies from before it (netbeagle) look for their own file names
-          if [ "$GITHUB_REF_NAME" = v0.8.0 ]; then
-            for f in dist/nethound.js dist/bin/*; do
-              name=$(basename "$f")
-              cp "$f" "release/netbeagle${name#nethound}"
-            done
-          fi
           (cd release && sha256sum * > SHA256SUMS)
           cat release/SHA256SUMS
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -119,23 +112,6 @@ jobs:
         run: |
           mkdir -p dist && cp release/nethound.js release/SHA256SUMS dist/
           npm publish --provenance --access public --ignore-scripts
-      # 0.8.0 only: the same nethound, published under the old name netbeagle, which copies from before
-      # 0.8.0 still ask for updates. Once on 0.8.0, they follow @michelsalib/nethound, and say how to switch.
-      - name: npm publish netbeagle (the old name)
-        if: github.ref_name == 'v0.8.0'
-        run: |
-          mkdir -p old/dist && cp release/netbeagle.js release/SHA256SUMS old/dist/
-          node -e '
-            const p = require("./package.json");
-            p.name = "netbeagle";
-            p.description = "netbeagle is now @michelsalib/nethound: " + p.description;
-            p.bin = { netbeagle: "dist/netbeagle.js" };
-            p.files = ["dist/netbeagle.js", "dist/SHA256SUMS"];
-            delete p.scripts; delete p.devDependencies;
-            require("fs").writeFileSync("old/package.json", JSON.stringify(p, null, 2));
-            require("fs").writeFileSync("old/README.md", "# netbeagle is now nethound\n\nSame tool, new name: [@michelsalib/nethound](https://www.npmjs.com/package/@michelsalib/nethound).\n\n```sh\nnpm uninstall -g netbeagle && npm install -g @michelsalib/nethound\n```\n");
-          '
-          cd old && npm publish --provenance --access public --ignore-scripts
       # the provenance attested above, as a release file too: tools that look at the release itself
       # (OpenSSF Scorecard, slsa-verifier) find it there; gh attestation verify needs nothing more
       - run: |
