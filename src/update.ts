@@ -141,8 +141,8 @@ export function renameNotice(
 			default:
 				// the same file under the new name: it updates itself from nethound's releases already
 				return windows
-					? `irm https://github.com/${REPO}/releases/latest/download/install.ps1 | iex; Remove-Item -Recurse '${dirname(script)}'`
-					: `mv '${script}' '${join(dirname(script), "nethound")}'`;
+					? `irm https://github.com/${REPO}/releases/latest/download/install.ps1 | iex; Remove-Item -Recurse '${script.replace(/[\\/][^\\/]*$/, "")}'`
+					: `mv '${script}' '${script.replace(/netbeagle$/i, "nethound")}'`;
 		}
 	})();
 	return (

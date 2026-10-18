@@ -327,7 +327,7 @@ describe("renameNotice", () => {
 		],
 		[
 			"C:\\Users\\u\\AppData\\Local\\Programs\\netbeagle\\netbeagle.mjs",
-			"install.ps1 | iex; Remove-Item -Recurse",
+			"install.ps1 | iex; Remove-Item -Recurse 'C:\\Users\\u\\AppData\\Local\\Programs\\netbeagle'",
 			true,
 		],
 	];
