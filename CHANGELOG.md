@@ -2,7 +2,7 @@
 
 All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.9.0 (2026-10-19)
 
 ### Added
 
