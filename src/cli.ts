@@ -208,7 +208,10 @@ async function main(argv: string[]): Promise<number> {
 		});
 		return 0;
 	}
-	const snap: Snapshot = collect(values["no-docker"] ? { containers: [] } : {});
+	const snap: Snapshot = collect({
+		...(values["no-docker"] && { containers: [] }),
+		windows: command === "doctor",
+	});
 	if (!values["show-secrets"])
 		for (const p of snap.processes) p.cmd = maskCmd(p.cmd);
 	if (values.snapshot) {

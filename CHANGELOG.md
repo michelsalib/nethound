@@ -2,6 +2,22 @@
 
 All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow [semantic versioning](https://semver.org).
 
+## Unreleased
+
+### Added
+
+- `doctor` checks the routes: no default route (and what this machine still reaches), two default
+  routes tied on their metric, a VPN taking all internet traffic (and what stays off it), DNS servers
+  with no route, and a private DNS server only the default route reaches, often a disconnected VPN's.
+- `doctor` finds servers that take IPv6 only: on `::`, where IPv4 clients are refused (Windows'
+  default), or on `::1`, where `127.0.0.1` is (node 17 and later resolve `localhost` to `::1`).
+- `doctor` in WSL finds a Windows program on a port a WSL server holds: Windows' `localhost` reaches
+  it instead of WSL's. Windows' ports come from its own `netstat.exe`, in half a second.
+
+### Changed
+
+- Behind systemd-resolved's `127.0.0.53`, the DNS servers it asks are listed too (`map`, `--json`).
+
 ## 0.8.0 (2026-10-18)
 
 ### Changed

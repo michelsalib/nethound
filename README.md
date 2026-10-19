@@ -195,7 +195,7 @@ command lines only in an administrator terminal. nethound only reads: see
 | `nethound watch` | live: every port with its process, the **git checkout and branch** it runs in (or its directory), how long it has been up and its clients, refreshed every couple of seconds; ports that open or close are marked. Select one to see its command line and what started it; `o` opens it in the browser when it answers HTTP, `k` stops it, `K` stops it with what started it (`bun run dev`, `npm`, a watcher), `/` filters by branch, port or name. Click a port to select it, its URL to open it, scroll with the wheel, click the keys on the last line |
 | `nethound open [PORT]` | opens what listens on `PORT` in the browser (in WSL, Windows' browser) once it answers HTTP or HTTPS; alone, lists every port a browser can open, page or API, with what holds it. Databases and caches are never asked; `--no-probe` asks nothing and opens `http://localhost:PORT` as is. Exits 1 when nothing answers |
 | `nethound kill PORT` | stops what listens on `PORT`, after saying which process it is, in which checkout, started by what, and asking. `--tree` also stops what started it, `--force` kills at once, `-y` doesn't ask; a container is `docker stop`ped |
-| `nethound doctor` | what is wrong with how this machine listens, each with what is behind it and its fix: databases, caches, debuggers and the docker API reachable from other machines (dev servers too, as notes), and ports two programs share, with which one `localhost` reaches over IPv4 and over IPv6. Exits 1 on errors |
+| `nethound doctor` | what is wrong with how this machine listens and routes, each with what is behind it and its fix: databases, caches, debuggers and the docker API reachable from other machines (dev servers too, as notes); ports two programs share, with which one `localhost` reaches over IPv4 and over IPv6; servers on `::` that refuse IPv4, or on `::1` only; in WSL, a Windows program on a port WSL serves, which Windows' `localhost` then reaches instead. Then the routes: no default route, two with the same metric, a VPN taking all traffic, DNS servers with no route (or a private one only the default route reaches, often a disconnected VPN's). Exits 1 on errors |
 | `nethound map` | the whole picture, interface by interface: what is open everywhere, what is bound to each interface, the containers behind each bridge, the connections leaving through each one, which local process talks to which, and the DNS servers |
 | `nethound completion bash\|zsh\|fish\|powershell` | a shell completion script (commands, options, the ports listening now) |
 | `nethound upgrade` | update an `install.sh` or `install.ps1` install; for others, prints the update command |
@@ -268,12 +268,16 @@ Each system is read its own way, into the same picture, so every command works t
   WSL VM, so those say `+ Windows`.
 - Connections between two processes of this machine are matched end to end, so `curl 400 → :5000 node
   300` names both sides.
+- **DNS servers**: `/etc/resolv.conf`; behind systemd-resolved's `127.0.0.53`, the servers it asks too,
+  from `/run/systemd/resolve/resolv.conf`.
+- **`doctor` in WSL** also asks Windows which ports it listens on, with Windows' own `netstat.exe`,
+  `tasklist.exe` and `netsh.exe interface portproxy` (half a second; skipped when WSL can't run
+  Windows programs). `wslrelay`, Docker Desktop and port proxies forward to WSL: they don't count.
 
 ## Status
 
-Linux (WSL included), macOS and Windows. Planned: more `nethound doctor` checks (no default route or
-two of them, a VPN taking all traffic, DNS servers with no route), firewall rules, network namespaces
-(inside containers).
+Linux (WSL included), macOS and Windows. Planned: firewall rules, network namespaces (inside
+containers).
 
 ## The pack
 

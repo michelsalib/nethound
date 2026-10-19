@@ -10,7 +10,7 @@
     node 300             listens on 127.0.0.1:5000 and 192.168.1.10:8080; curl 400 is its client;
                          started by bun run dev (250), itself started from zsh (240), in ~/src/app-feature
     curl 400             also talks to 140.82.121.4:443
-    systemd-resolved     udp 127.0.0.53:53
+    systemd-resolved     udp 127.0.0.53:53, asking 192.168.1.1
 """
 import os, shutil, socket, struct, sys
 
@@ -120,3 +120,4 @@ iface("docker0", 5, 1, "down", "02:42:ac:11:00:01", 1500, devtype="bridge")
 
 w("etc/passwd", "root:x:0:0:root:/root:/bin/bash\nsystemd-resolve:x:101:101::/run/systemd:/usr/sbin/nologin\nme:x:1000:1000::/home/me:/bin/bash\n")
 w("etc/resolv.conf", "# generated\nnameserver 127.0.0.53\nsearch lan\n")
+w("run/systemd/resolve/resolv.conf", "# the servers systemd-resolved asks\nnameserver 192.168.1.1\n")

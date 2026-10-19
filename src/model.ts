@@ -151,6 +151,17 @@ export interface Container {
 	ports: PublishedPort[];
 }
 
+/** In WSL: a port Windows itself listens on. */
+export interface WindowsPort {
+	address: string;
+	port: number;
+	pid: number;
+	/** Its image name, without .exe. */
+	name?: string;
+	/** `netsh interface portproxy` forwards it: to WSL, most of the time. */
+	proxy?: boolean;
+}
+
 export interface Snapshot {
 	hostname: string;
 	/** "wsl" in Windows Subsystem for Linux, where Windows forwards localhost ports into the VM. */
@@ -162,8 +173,12 @@ export interface Snapshot {
 	containers: Container[];
 	/** User names by uid. */
 	users: Record<number, string>;
-	/** Name servers: /etc/resolv.conf, or each interface's on Windows. */
+	/** Name servers: /etc/resolv.conf (then systemd-resolved's own, behind its 127.0.0.53), or
+	 * each interface's on Windows. */
 	dns: string[];
+	/** In WSL, for nethound doctor: the TCP ports Windows listens on, which its localhost reaches
+	 * before WSL's. */
+	windowsPorts?: WindowsPort[];
 	/** Our uid: sockets of other users have no process unless we are root. */
 	uid?: number;
 	/** Processes whose sockets nethound could not read (other users', without root). */
