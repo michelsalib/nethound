@@ -189,6 +189,13 @@ test("docker's own rules: a published port is forwarded; DOCKER-USER can stop it
 		.find((c) => c.name === "DOCKER-USER")
 		?.rules.push(parseIptablesRule("-A DOCKER-USER -i eth0 -j DROP").rule);
 	expect(verdictVia(snap, pg, "eth0")?.result).toBe("blocked");
+	// published on :: too, to a container with IPv4 only: docker-proxy takes IPv6 on this machine,
+	// where that IPv4 rule doesn't apply
+	pg.addresses.push("::");
+	expect(verdictVia(snap, pg, "eth0")).toEqual({
+		result: "open",
+		why: "over IPv6, no rule filters incoming connections; over IPv4, docker's rules block it: DOCKER-USER: -i eth0 -j DROP",
+	});
 });
 
 test("as root, iptables-save then nft; tables iptables wrote are read once", () => {
