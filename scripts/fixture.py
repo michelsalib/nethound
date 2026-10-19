@@ -11,6 +11,8 @@
                          started by bun run dev (250), itself started from zsh (240), in ~/src/app-feature
     curl 400             also talks to 140.82.121.4:443
     systemd-resolved     udp 127.0.0.53:53, asking 192.168.1.1
+    postgres 600         in container pg's own namespace, listens on 0.0.0.0:5432 there
+    python3 610          in a namespace of its own, listens on 0.0.0.0:8765 there
 """
 import os, shutil, socket, struct, sys
 
@@ -93,6 +95,24 @@ proc(250, "bun", ["bun", "run", "dev"], 1000, [], ppid=240, start=6000, cwd="/ho
 # a node that renamed its main thread, as runtimes do; started a minute after boot by bun run dev
 proc(300, "MainThread", ["/usr/bin/node", "server.js", "--token=s3cret"], 1000, [200, 201, 204], ppid=250, start=6050, cwd="/home/me/src/app-feature")
 proc(400, "curl", ["curl", "http://127.0.0.1:5000/", "https://github.com/"], 1000, [202, 203], ppid=240, start=9000, cwd="/home/me")
+
+# network namespaces: nethound's own, container pg's (its first process, postgres 600, from docker
+# inspect) and one of python3 610's; each /proc/PID/net shows its namespace's sockets
+os.makedirs(os.path.join(root, "proc/self/ns"), exist_ok=True)
+os.symlink("net:[4026531840]", os.path.join(root, "proc/self/ns/net"))
+def netns(pid, inode, tcp, udp=()):
+    os.makedirs(os.path.join(root, "proc/%d/ns" % pid), exist_ok=True)
+    os.symlink("net:[%d]" % inode, os.path.join(root, "proc/%d/ns/net" % pid))
+    w("proc/%d/net/tcp" % pid, table(tcp, False))
+    w("proc/%d/net/tcp6" % pid, HEAD)
+    w("proc/%d/net/udp" % pid, table(list(udp), False))
+    w("proc/%d/net/udp6" % pid, HEAD)
+proc(600, "postgres", ["postgres"], 999, [700], start=200)
+# docker's DNS server, held by dockerd, is in every container: not the container's
+netns(600, 4026532100, [("0.0.0.0", 5432, "0.0.0.0", 0, "0A", 999, 700), ("127.0.0.11", 41000, "0.0.0.0", 0, "0A", 0, 701)],
+      [("127.0.0.11", 53000, "0.0.0.0", 0, "07", 0, 702)])
+proc(610, "python3", ["python3", "-m", "http.server", "8765"], 1000, [710], ppid=240, start=9500, cwd="/home/me")
+netns(610, 4026532200, [("0.0.0.0", 8765, "0.0.0.0", 0, "0A", 1000, 710)])
 
 def iface(name, index, typ, operstate, mac, mtu, devtype=None, device=False, master=None, brif=()):
     d = "sys/class/net/%s/" % name

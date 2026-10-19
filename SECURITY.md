@@ -21,7 +21,8 @@ These are worth knowing when you judge what counts as a vulnerability:
   (`kill -y` skips the question). Stopping with what started a server climbs only through package
   runners (`npm`, `bun run`, a watcher, a `sh -c` they started), never into an interactive shell, an IDE,
   another user's process or nethound itself. What it reads:
-  - on Linux, `/proc` (sockets, and each process's open files and command line), `/sys/class/net`,
+  - on Linux, `/proc` (sockets, each process's open files, command line and network namespace, and
+    the sockets of each container's and namespace's own `/proc/PID/net`), `/run/netns`, `/sys/class/net`,
     `/etc/resolv.conf` and systemd-resolved's `/run/systemd/resolve/resolv.conf`;
   - on macOS, what `netstat`, `lsof`, `ifconfig`, `networksetup`, `ps` and `/etc/resolv.conf` print;
   - on Windows, what one PowerShell script prints, from `Get-NetTCPConnection`, `Get-NetUDPEndpoint`,
@@ -30,6 +31,12 @@ These are worth knowing when you judge what counts as a vulnerability:
     a file.
   - in WSL, for `nethound doctor` only, what Windows' own `netstat.exe -ano`, `tasklist.exe` and
     `netsh.exe interface portproxy show all` print: the ports Windows listens on.
+- **To read the firewall** (`who` and `doctor` only): on Linux as root, `iptables-save`,
+  `ip6tables-save` and `nft -j list ruleset`, and otherwise ufw's and firewalld's settings in `/etc`
+  and `/usr/lib/firewalld`; on macOS, `socketfilterfw`'s `--get…` and `--listapps` queries; on
+  Windows, the same PowerShell script also reads the firewall's policy and inbound rules
+  (`HNetCfg.FwPolicy2`), `Get-NetConnectionProfile` and Windows Security's list of firewalls. None of
+  them changes anything.
 - **It runs `docker`**: `docker ps -q` and `docker inspect` of the running containers, to know which
   container sits behind each published port. `--no-docker` turns that off.
 - **Root (or an administrator terminal) is optional.** Without it, on Linux and macOS other users'

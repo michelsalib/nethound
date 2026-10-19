@@ -11,6 +11,8 @@ const run = (...args: string[]) =>
 	spawnSync("node", ["dist/nethound.js", ...args], {
 		cwd: root,
 		encoding: "utf8",
+		// conns --all on a busy machine prints more than spawnSync's 1 MB, which kills it
+		maxBuffer: 64 * 1024 * 1024,
 	});
 
 beforeAll(() => {

@@ -6,6 +6,8 @@
 
 import type {
 	Address,
+	Firewall,
+	FirewallProfile,
 	Iface,
 	IfaceKind,
 	Process,
@@ -36,6 +38,16 @@ $ifaces = foreach ($n in [System.Net.NetworkInformation.NetworkInterface]::GetAl
     dns = @($p.DnsAddresses | ForEach-Object { "$_" })
   }
 }
+$fw = $null
+if ($firewall) {
+  $policy = New-Object -ComObject HNetCfg.FwPolicy2
+  $fw = [ordered]@{
+    profiles = @(foreach ($b in 1, 2, 4) { ,@($policy.FirewallEnabled($b), $policy.BlockAllInboundTraffic($b), $policy.DefaultInboundAction($b)) })
+    rules = @($policy.Rules | Where-Object { $_.Direction -eq 1 -and $_.Enabled -and $_.Protocol -in 6, 17, 256 -and -not $_.LocalUserOwner } | ForEach-Object { ,@($_.Name, $_.Action, $_.Protocol, "$($_.LocalPorts)", [Environment]::ExpandEnvironmentVariables("$($_.ApplicationName)"), "$($_.serviceName)", $_.Profiles, "$($_.RemoteAddresses)", "$($_.LocalAppPackageId)") })
+    networks = @(Get-NetConnectionProfile | ForEach-Object { ,@($_.InterfaceAlias, "$($_.NetworkCategory)") })
+    products = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName FirewallProduct | ForEach-Object { $_.displayName })
+  }
+}
 $g = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties()
 [ordered]@{
   tcp4 = @($g.GetActiveTcpListeners() | Where-Object { "$($_.Address)" -eq '0.0.0.0' } | ForEach-Object { $_.Port })
@@ -44,7 +56,8 @@ $g = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties()
   udp = @(Get-NetUDPEndpoint | ForEach-Object { ,@($_.LocalAddress, $_.LocalPort, $_.OwningProcess) })
   interfaces = @($ifaces)
   routes = @(Get-NetRoute | ForEach-Object { ,@($_.DestinationPrefix, $_.NextHop, $_.InterfaceAlias, ($_.RouteMetric + $_.InterfaceMetric)) })
-  processes = @(Get-CimInstance Win32_Process -Property ProcessId, Name, CommandLine, ParentProcessId, CreationDate | ForEach-Object { ,@($_.ProcessId, $_.Name, $_.CommandLine, $_.ParentProcessId, $(if ($_.CreationDate) { ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } else { 0 })) })
+  processes = @(Get-CimInstance Win32_Process -Property ProcessId, Name, CommandLine, ParentProcessId, CreationDate, ExecutablePath | ForEach-Object { ,@($_.ProcessId, $_.Name, $_.CommandLine, $_.ParentProcessId, $(if ($_.CreationDate) { ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } else { 0 }), $_.ExecutablePath) })
+  firewall = $fw
 } | ConvertTo-Json -Depth 5 -Compress
 `;
 
@@ -69,8 +82,36 @@ export interface WindowsData {
 		dns: string[];
 	}[];
 	routes?: [string, string, string, number][];
-	/** pid, image name, command line, parent pid, start time (ms since the epoch, 0 unknown). */
-	processes?: [number, string, string | null, number?, number?][];
+	/** pid, image name, command line, parent pid, start time (ms since the epoch, 0 unknown),
+	 * executable path. */
+	processes?: [
+		number,
+		string,
+		string | null,
+		number?,
+		number?,
+		(string | null)?,
+	][];
+	/** Asked for: the firewall's profiles (domain, private, public: enabled, block all, default
+	 * action 0 block or 1 allow), inbound rules, each network's category, other firewalls. */
+	firewall?: {
+		profiles: [boolean, boolean, number][];
+		/** name, action (0 block, 1 allow), protocol (6, 17, 256 any), local ports, program, service,
+		 * profiles, remote addresses, app package (a Store app's) */
+		rules: [
+			string,
+			number,
+			number,
+			string,
+			string,
+			string,
+			number,
+			string,
+			string?,
+		][];
+		networks: [string, string][];
+		products: string[];
+	} | null;
 }
 
 const TCP_STATES: Record<string, SocketState> = {
@@ -220,7 +261,7 @@ export function parseWindows(
 			),
 		);
 	const processes: Process[] = (data.processes ?? []).map(
-		([pid, image, cmd, ppid, started]) => {
+		([pid, image, cmd, ppid, started, exe]) => {
 			const name = image.replace(/\.exe$/i, "");
 			// without an administrator terminal, other users' command lines are not given
 			return {
@@ -229,6 +270,7 @@ export function parseWindows(
 				cmd: cmd?.trim() || name,
 				...(ppid && { ppid }),
 				...(started && { started }),
+				...(exe && { exe }),
 			};
 		},
 	);
@@ -250,11 +292,64 @@ export function parseWindows(
 		users: {},
 		dns,
 		hidden: 0,
+		...(data.firewall && { firewall: parseFirewall(data.firewall) }),
 	};
 }
 
-export function collectWindows(run: Run) {
-	const encoded = Buffer.from(SCRIPT, "utf16le").toString("base64");
+const CATEGORY: Record<string, FirewallProfile> = {
+	DomainAuthenticated: "domain",
+	Private: "private",
+	Public: "public",
+};
+
+/** The firewall's part of SCRIPT's answer. */
+export function parseFirewall(
+	fw: NonNullable<WindowsData["firewall"]>,
+): Firewall {
+	const profile = (i: number) => {
+		const [enabled = false, blockAll = false, action = 0] =
+			fw.profiles?.[i] ?? [];
+		return { enabled, blockAll, defaultBlock: action === 0 };
+	};
+	return {
+		kind: "windows",
+		profiles: { domain: profile(0), private: profile(1), public: profile(2) },
+		ifaceProfiles: Object.fromEntries(
+			(fw.networks ?? []).map(([iface, category]) => [
+				iface,
+				CATEGORY[category] ?? "public",
+			]),
+		),
+		rules: (fw.rules ?? []).map(
+			([
+				name,
+				action,
+				protocol,
+				ports,
+				program,
+				service,
+				profiles,
+				remote,
+				pkg,
+			]) => ({
+				name,
+				allow: action === 1,
+				...(protocol !== 256 && { proto: protocol === 6 ? "tcp" : "udp" }),
+				ports: ports || "*",
+				...(program && program !== "*" && { program: program.toLowerCase() }),
+				...(service && service !== "*" && { service }),
+				...(pkg && { package: pkg }),
+				profiles,
+				remote: remote || "*",
+			}),
+		),
+		products: fw.products ?? [],
+	};
+}
+
+export function collectWindows(run: Run, firewall = false) {
+	const script = firewall ? `$firewall = $true\n${SCRIPT}` : SCRIPT;
+	const encoded = Buffer.from(script, "utf16le").toString("base64");
 	const out = run("powershell.exe", [
 		"-NoProfile",
 		"-NonInteractive",

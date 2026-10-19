@@ -17,9 +17,10 @@ const RUNNER_SCRIPT =
 	/(npm-cli\.js|npx-cli\.js|pnpm\.c?js|yarn\.c?js|[\\/]node_modules[\\/](\.bin[\\/])?(vite|next|nuxt|astro|remix|webpack|parcel|nodemon|tsx|turbo|nx|concurrently))/i;
 const SHELL = /^-?(sh|bash|zsh|dash|fish|ksh|cmd|powershell|pwsh)$/i;
 
-/** A runner: what a person starts a dev server with. */
+/** A runner: what a person starts a dev server with. npm (7 and later), pnpm and yarn rename their
+ * process after the command: "npm run dev", in its name and its command line. */
 const runner = (p: Process) =>
-	RUNNER.test(p.name) ||
+	RUNNER.test(p.name.split(" ")[0] ?? "") ||
 	(SCRIPT_RUNTIME.test(p.name) && SCRIPT_ARGS.test(` ${p.cmd} `)) ||
 	RUNNER_SCRIPT.test(p.cmd);
 

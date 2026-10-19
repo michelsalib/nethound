@@ -27,6 +27,7 @@ import {
 	connectionJson,
 	elevate,
 	ifaceViewJson,
+	insideJson,
 	listenerJson,
 	mapJson,
 	paint,
@@ -211,6 +212,7 @@ async function main(argv: string[]): Promise<number> {
 	const snap: Snapshot = collect({
 		...(values["no-docker"] && { containers: [] }),
 		windows: command === "doctor",
+		firewall: command === "doctor" || command === "who",
 	});
 	if (!values["show-secrets"])
 		for (const p of snap.processes) p.cmd = maskCmd(p.cmd);
@@ -261,11 +263,12 @@ async function main(argv: string[]): Promise<number> {
 				() => ({
 					port,
 					listeners: r.listeners.map(listenerJson),
+					inside: r.inside.map(insideJson),
 					outbound: r.outbound.map(connectionJson),
 					relayed: r.relayed.map(connectionJson),
 				}),
 			);
-			return r.listeners.length || r.outbound.length ? 0 : 1;
+			return r.listeners.length || r.outbound.length || r.inside.length ? 0 : 1;
 		}
 		case "conns": {
 			const cs = connections(snap)

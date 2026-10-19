@@ -1,10 +1,11 @@
 // Linux: everything from /proc, /sys and /etc. Every path is relative to `root`, so tests can
 // point it at a fixture tree instead of the real machine.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Address, Snapshot } from "../model.ts";
+import type { Address, Container, Snapshot } from "../model.ts";
 import { readInterfaces, systemAddresses } from "./interfaces.ts";
+import { readNamespaces } from "./namespaces.ts";
 import { readUsers, scanProcesses } from "./processes.ts";
 import { readRoutes } from "./routes.ts";
 import { readSockets } from "./sockets.ts";
@@ -24,6 +25,7 @@ function nameServers(read: (p: string) => string): string[] {
 export function collectLinux(
 	root: string,
 	addresses?: Record<string, Address[]>,
+	containers: Container[] = [],
 ): Omit<Snapshot, "hostname" | "containers" | "uid"> {
 	const proc = join(root, "proc");
 	const read = (p: string) => {
@@ -42,9 +44,14 @@ export function collectLinux(
 		...(v6only && s.local.address === "::" && { v6only: true }),
 	}));
 	return {
-		environment: /microsoft|wsl/i.test(read("proc/sys/kernel/osrelease"))
-			? "wsl"
-			: "linux",
+		// WSL's kernel, and WSL's own files: a container on that kernel is no WSL, Windows forwards
+		// nothing to it
+		environment:
+			/microsoft|wsl/i.test(read("proc/sys/kernel/osrelease")) &&
+			(existsSync(join(root, "run/WSL")) ||
+				existsSync(join(proc, "sys/fs/binfmt_misc/WSLInterop")))
+				? "wsl"
+				: "linux",
 		interfaces: readInterfaces(
 			join(root, "sys"),
 			addresses ?? systemAddresses(),
@@ -52,6 +59,7 @@ export function collectLinux(
 		routes: readRoutes(proc),
 		sockets,
 		processes: scan.processes,
+		namespaces: readNamespaces(root, scan.processes, scan.owners, containers),
 		users: readUsers(join(root, "etc/passwd")),
 		dns: nameServers(read),
 		hidden: scan.hidden,

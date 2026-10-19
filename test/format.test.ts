@@ -49,7 +49,11 @@ test("map", () => {
 	);
 	expect(out).toContain("  local   curl 400 → :5000 node 300");
 	expect(out).toContain("  out     curl 400 → 140.82.121.4:443");
-	expect(out).toContain("  holds   pg 172.18.0.2  ← host :5432");
+	expect(out).toContain("  holds   pg 172.18.0.2  listens 5432  ← host :5432");
+	// a namespace that is no container's
+	expect(out).toContain(
+		"in other network namespaces\n  tcp 8765  python3 610  0.0.0.0",
+	);
 	expect(out).toContain("down, no address: docker0");
 	// a closing socket is not a connection
 	expect(out).not.toContain("closing");

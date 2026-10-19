@@ -295,3 +295,18 @@ test("routing findings render with the others, before the ports", () => {
 	);
 	expect(text).toEndWith("1 error, 1 warning, 1 note");
 });
+
+test("the same program in two checkouts is two servers: localhost split between them", () => {
+	const snap = structuredClone(fixture([]));
+	snap.processes.push(
+		{ pid: 951, name: "node", cmd: "vite --host 127.0.0.1", cwd: "/src/shop" },
+		{ pid: 952, name: "node", cmd: "vite", cwd: "/src/shop-checkout" },
+	);
+	snap.sockets.push(listen("127.0.0.1", 5173, 951), {
+		...listen("::1", 5173, 952),
+		v6only: true,
+	});
+	expect(byRule(snap, "port-shared")[0]?.title).toBe(
+		"localhost:5173 reaches node 951 over IPv4 and node 952 over IPv6",
+	);
+});

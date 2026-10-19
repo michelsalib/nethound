@@ -8,6 +8,7 @@ interface Inspect {
 	Id?: string;
 	Name?: string;
 	Config?: { Image?: string; Labels?: Record<string, string> | null };
+	State?: { Pid?: number };
 	NetworkSettings?: {
 		Networks?: Record<
 			string,
@@ -59,6 +60,7 @@ export function parseInspect(json: string): Container[] {
 				}),
 			),
 			ports,
+			...(c.State?.Pid && { pid: c.State.Pid }),
 		};
 	});
 }

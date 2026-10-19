@@ -4,11 +4,14 @@
 
 import {
 	DOCKER,
+	insideListeners,
 	type Listener,
 	listeners,
+	publishedTarget,
 	type RouteResult,
 	routeTo,
 } from "./analyze.ts";
+import { INTERNAL, outside, verdictFor } from "./firewall.ts";
 import type { Family, Iface, Route, Snapshot, Socket } from "./model.ts";
 import { inNetwork, isLoopback, isWildcard } from "./net.ts";
 
@@ -137,17 +140,6 @@ const SERVICES: Service[] = [
 	},
 ];
 
-const INTERNAL: Iface["kind"][] = ["loopback", "bridge", "veth", "virtual"];
-
-/** The interfaces that lead off this machine: not the loopback, docker's bridges or VM switches. */
-function outside(snap: Snapshot, l: Listener): string[] {
-	const kind = new Map(snap.interfaces.map((i) => [i.name, i.kind]));
-	return l.reach.interfaces.filter((n) => {
-		const k = kind.get(n);
-		return k !== undefined && !INTERNAL.includes(k);
-	});
-}
-
 /** The service a listener is: a container by its image or port, a process by its name, else its port. */
 function serviceOf(l: Listener): Service | undefined {
 	if (l.container) {
@@ -190,16 +182,29 @@ const exposed: Rule = (snap, ls) =>
 		const where =
 			l.reach.scope === "everywhere" ? "every interface" : via.join(", ");
 		const container = l.container && l.published;
+		const fw = verdictFor(snap, l, via);
+		const blocked = fw?.result === "blocked";
 		return [
 			{
 				rule: "exposed",
-				severity: s.severity,
+				// bound to the network, but the firewall keeps it here: fine until the firewall changes
+				severity: blocked ? "info" : s.severity,
 				proto: l.proto,
 				port: l.port,
-				title: `${s.name} on ${l.proto} ${l.port} is reachable from ${where}`,
+				title: blocked
+					? `${s.name} on ${l.proto} ${l.port} is bound to ${where}, but the firewall blocks it`
+					: `${s.name} on ${l.proto} ${l.port} is reachable from ${where}`,
 				details: [
 					`${owner(l)}, bound to ${l.addresses.join(", ")}`,
-					`any machine that can reach ${via.join(", ")} ${s.risk}, unless a firewall stops it`,
+					...(blocked
+						? [
+								`firewall: ${fw.why}`,
+								"fine while the firewall stays as it is; bound to this machine, it wouldn't depend on it",
+							]
+						: [
+								`any machine that can reach ${via.join(", ")} ${s.risk}${fw ? "" : ", unless a firewall stops it"}`,
+								...(fw ? [`firewall: ${fw.why}`] : []),
+							]),
 					...(snap.environment === "wsl"
 						? [
 								"in WSL that is Windows itself, and other machines too with mirrored networking or a port Windows forwards",
@@ -255,12 +260,13 @@ function overlap(a: Listener, b: Listener): boolean {
 	);
 }
 
-/** One owner per program: a server's workers (nginx, gunicorn) share their port on purpose. */
+/** One owner per program: a server's workers (nginx, gunicorn) share their port on purpose, from
+ * one directory; the same program in two checkouts is two servers. */
 const ownerKey = (l: Listener) =>
 	l.container
 		? `c ${l.container.id}`
 		: l.process
-			? `p ${l.process.name}`
+			? `p ${l.process.name} ${l.process.cwd ?? ""}`
 			: `u ${l.user ?? "?"}`;
 
 const portShared: Rule = (_snap, ls) => {
@@ -419,6 +425,66 @@ const wslShadowed: Rule = (snap, ls) => {
 		];
 	});
 };
+
+/** A port docker publishes, to a container where nothing takes it: connections are reset. */
+const publishedNowhere: Rule = (snap, ls) =>
+	ls.flatMap((l): Finding[] => {
+		const c = l.container;
+		const p = l.published;
+		if (!c || !p) return [];
+		const t = publishedTarget(snap, c, p);
+		const base = {
+			rule: "published-nowhere",
+			severity: "warning" as const,
+			proto: l.proto,
+			port: l.port,
+		};
+		// keeping the host address it is published on
+		const host = isWildcard(p.hostIp) ? "" : `${p.hostIp}:`;
+		const map = (inside: number) =>
+			`-p ${host}${l.port}:${inside} (in compose: "${host}${l.port}:${inside}")`;
+		if (t.state === "nothing") {
+			// what it does listen on, to other containers and the published ports
+			const elsewhere = insideListeners(snap).filter(
+				(x) =>
+					x.container?.id === c.id &&
+					x.proto === l.proto &&
+					!x.addresses.every(isLoopback),
+			);
+			const [only] = elsewhere;
+			return [
+				{
+					...base,
+					title: `${l.proto} ${l.port} goes to ${p.containerPort} in container ${c.name}, where nothing listens`,
+					details: [
+						"docker accepts the connection, finds nobody behind it, and closes it",
+						elsewhere.length
+							? `in the container, ${elsewhere.map((x) => x.port).join(", ")} ${elsewhere.length > 1 ? "listen" : "listens"} instead`
+							: "nothing in it listens on the network: still starting, or its server didn't start (docker logs)",
+					],
+					fix:
+						only && elsewhere.length === 1
+							? `publish the port it listens on: ${map(only.port)}`
+							: "start its server, or publish the port it listens on",
+				},
+			];
+		}
+		if (t.state === "loopback") {
+			const [x] = t.inside;
+			const ip = c.networks.find((n) => n.ip)?.ip;
+			return [
+				{
+					...base,
+					title: `${l.proto} ${l.port} goes to container ${c.name}, where ${p.containerPort} listens on ${x?.addresses.join(", ")} only`,
+					details: [
+						`docker forwards to the container's own address${ip ? ` (${ip})` : ""}, which its server doesn't take: connections are reset`,
+					],
+					fix: "bind it to 0.0.0.0 in the container: a dev server's --host 0.0.0.0 (vite, flask run, next -H), or HOST=0.0.0.0",
+				},
+			];
+		}
+		return [];
+	});
 
 /** Any address on the internet: where traffic to it goes is where the internet goes. */
 const INTERNET: Record<Family, string> = {
@@ -614,6 +680,7 @@ export const RULES: Rule[] = [
 	portShared,
 	ipv6Only,
 	wslShadowed,
+	publishedNowhere,
 	noDefaultRoute,
 	defaultRoutes,
 	vpnAllTraffic,
