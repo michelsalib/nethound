@@ -21,13 +21,15 @@ These are worth knowing when you judge what counts as a vulnerability:
   (`kill -y` skips the question). Stopping with what started a server climbs only through package
   runners (`npm`, `bun run`, a watcher, a `sh -c` they started), never into an interactive shell, an IDE,
   another user's process or nethound itself. What it reads:
-  - on Linux, `/proc` (sockets, and each process's open files and command line), `/sys/class/net` and
-    `/etc/resolv.conf`;
+  - on Linux, `/proc` (sockets, and each process's open files and command line), `/sys/class/net`,
+    `/etc/resolv.conf` and systemd-resolved's `/run/systemd/resolve/resolv.conf`;
   - on macOS, what `netstat`, `lsof`, `ifconfig`, `networksetup`, `ps` and `/etc/resolv.conf` print;
   - on Windows, what one PowerShell script prints, from `Get-NetTCPConnection`, `Get-NetUDPEndpoint`,
     `Get-NetRoute`, `Win32_Process` and .NET's `NetworkInterface`. The script is part of nethound
     (`src/windows/collect.ts`) and is passed to `powershell.exe` with `-EncodedCommand`, not read from
     a file.
+  - in WSL, for `nethound doctor` only, what Windows' own `netstat.exe -ano`, `tasklist.exe` and
+    `netsh.exe interface portproxy show all` print: the ports Windows listens on.
 - **It runs `docker`**: `docker ps -q` and `docker inspect` of the running containers, to know which
   container sits behind each published port. `--no-docker` turns that off.
 - **Root (or an administrator terminal) is optional.** Without it, on Linux and macOS other users'
