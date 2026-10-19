@@ -1,10 +1,16 @@
-// nethound doctor: what is wrong with how this machine listens, each with what is behind it and how
-// to fix it. Each rule is a function from the listeners to findings, so adding one is adding a
-// function to RULES.
+// nethound doctor: what is wrong with how this machine listens and routes, each with what is behind
+// it and how to fix it. Each rule is a function from the snapshot and its listeners to findings,
+// so adding one is adding a function to RULES.
 
-import { type Listener, listeners } from "./analyze.ts";
-import type { Family, Iface, Snapshot, Socket } from "./model.ts";
-import { isLoopback } from "./net.ts";
+import {
+	DOCKER,
+	type Listener,
+	listeners,
+	type RouteResult,
+	routeTo,
+} from "./analyze.ts";
+import type { Family, Iface, Route, Snapshot, Socket } from "./model.ts";
+import { inNetwork, isLoopback, isWildcard } from "./net.ts";
 
 export type Severity = "error" | "warning" | "info";
 
@@ -18,8 +24,9 @@ export interface Finding {
 	details: string[];
 	/** What to do about it. */
 	fix: string;
-	proto: Socket["proto"];
-	port: number;
+	/** The port it is about; none for the routing rules. */
+	proto?: Socket["proto"];
+	port?: number;
 }
 
 type Rule = (snap: Snapshot, ls: Listener[]) => Finding[];
@@ -316,14 +323,310 @@ const portShared: Rule = (_snap, ls) => {
 	return out;
 };
 
-export const RULES: Rule[] = [exposed, portShared];
+/** A socket that takes IPv4 clients: an IPv4 one, or one on :: that takes both. */
+const takes4 = (s: Socket) =>
+	s.family === 4 || (s.local.address === "::" && !s.v6only);
+
+const ipv6Only: Rule = (snap, ls) => {
+	const tcp = ls.filter((l) => l.proto === "tcp");
+	return tcp.flatMap((l): Finding[] => {
+		// a published port the firewall forwards has no socket to go by
+		if (!l.sockets.length || l.sockets.some(takes4)) return [];
+		const loop = l.addresses.every((a) => a === "::1");
+		// on an address of its own, clients ask for that address
+		if (!loop && !l.addresses.includes("::")) return [];
+		// another program takes IPv4 on that port: port-shared says who answers where
+		if (tcp.some((o) => o !== l && o.port === l.port && o.sockets.some(takes4)))
+			return [];
+		const base = { rule: "ipv6-only", proto: "tcp" as const, port: l.port };
+		const first =
+			"localhost works for clients that try IPv6 first (browsers, curl, node 17 and later)";
+		if (loop)
+			return [
+				{
+					...base,
+					severity: "info",
+					title: `${owner(l)} on tcp ${l.port} listens on ::1 only: 127.0.0.1:${l.port} is refused`,
+					details: [
+						`${first}; 127.0.0.1 and older tools get connection refused`,
+						"node 17 and later resolve localhost to ::1 first, so a server told to listen on localhost often ends up there",
+					],
+					fix: `bind it to 127.0.0.1 (vite --host 127.0.0.1, server.listen(${l.port}, "127.0.0.1")), or ask for localhost:${l.port} rather than 127.0.0.1`,
+				},
+			];
+		return [
+			{
+				...base,
+				severity: "warning",
+				title: `${owner(l)} on tcp ${l.port} takes IPv6 only: IPv4 clients are refused`,
+				details: [
+					`bound to :: for IPv6 alone${snap.environment === "windows" ? ", Windows' default" : ""}: it looks open on every interface, but not to IPv4`,
+					`127.0.0.1:${l.port} and other machines over IPv4 get connection refused; ${first}`,
+				],
+				fix: "bind it to 0.0.0.0 as well, or make its socket on :: take both (IPV6_V6ONLY off)",
+			},
+		];
+	});
+};
+
+/** In WSL: a Windows program on a port WSL serves takes Windows' localhost from it. */
+const wslShadowed: Rule = (snap, ls) => {
+	const windows = snap.windowsPorts;
+	if (snap.environment !== "wsl" || !windows) return [];
+	const ip = snap.interfaces
+		.find((i) => i.kind === "ethernet" && i.state !== "down")
+		?.addresses.find((a) => a.family === 4)?.address;
+	return ls.flatMap((l): Finding[] => {
+		// Windows forwards its localhost to what WSL holds on the loopback or on every address
+		if (
+			l.proto !== "tcp" ||
+			!l.addresses.some((a) => isWildcard(a) || isLoopback(a))
+		)
+			return [];
+		const theirs = windows.filter(
+			(w) =>
+				w.port === l.port &&
+				// a port proxy, wslrelay or Docker Desktop: forwarding to WSL, not a server of Windows'
+				!w.proxy &&
+				!DOCKER.test(w.name ?? "") &&
+				(isWildcard(w.address) || isLoopback(w.address)),
+		);
+		const [w] = theirs;
+		if (!w) return [];
+		// one program's two halves: a relay in WSL to its Windows side on the same port (Orca's)
+		const cmd = l.process?.cmd.toLowerCase() ?? "";
+		const name = w.name?.toLowerCase() ?? "";
+		if (
+			/relay|proxy|forward/.test(cmd) ||
+			(name.length > 2 && cmd.includes(name))
+		)
+			return [];
+		const them = `${w.name ?? "a process"} ${w.pid}`;
+		return [
+			{
+				rule: "wsl-port-shadowed",
+				severity: "warning",
+				proto: "tcp",
+				port: l.port,
+				title: `localhost:${l.port} in Windows reaches ${them}, not ${owner(l)} in WSL`,
+				details: [
+					`in WSL: ${owner(l)} on ${l.addresses.join(", ")}`,
+					`in Windows: ${them} on ${[...new Set(theirs.map((x) => x.address))].join(", ")}`,
+					"Windows forwards its localhost to WSL only for the ports it doesn't hold itself: a browser in Windows gets Windows' server",
+				],
+				fix: `stop one, or move it to another port${ip ? `; from Windows, WSL's is still at ${ip}:${l.port}` : ""}`,
+			},
+		];
+	});
+};
+
+/** Any address on the internet: where traffic to it goes is where the internet goes. */
+const INTERNET: Record<Family, string> = {
+	4: "1.1.1.1",
+	6: "2606:4700:4700::1111",
+};
+const FAMILIES: Family[] = [4, 6];
+
+const VPN: Iface["kind"][] = ["tun", "wireguard"];
+
+const kindOf = (snap: Snapshot, name?: string) =>
+	snap.interfaces.find((i) => i.name === name)?.kind;
+
+const isLinkLocalNet = (r: Route) =>
+	r.dest.startsWith("169.254.") || /^fe[89ab][0-9a-f]:/i.test(r.dest);
+
+const net = (r: Route) => `${r.dest}/${r.prefix}`;
+
+/** "default via 192.168.1.1 on eth0", "10.8.0.0/16 on utun4". */
+const routeText = (r: Route) =>
+	`${r.prefix === 0 ? "default" : net(r)}${r.gateway ? ` via ${r.gateway}` : ""} on ${r.iface}`;
+
+const unique = (xs: string[]) => [...new Set(xs)];
+
+/** The networks a route table reaches, by name: "192.168.1.0/24 on wlan0". */
+const networks = (rs: Route[]) =>
+	unique(rs.map((r) => `${net(r)} on ${r.iface}`)).join(", ");
+
+const offline = (snap: Snapshot) =>
+	FAMILIES.every((f) => routeTo(snap, INTERNET[f]).kind === "unreachable");
+
+const noDefaultRoute: Rule = (snap) => {
+	if (!offline(snap)) return [];
+	const reach = snap.routes.filter(
+		(r) => kindOf(snap, r.iface) !== "loopback" && !isLinkLocalNet(r),
+	);
+	return [
+		{
+			rule: "no-default-route",
+			severity: "warning",
+			title: "no route to the internet: there is no default route",
+			details: [
+				reach.length
+					? `this machine reaches only ${networks(reach)}`
+					: "nor any network: every interface is down or has no address",
+				...(snap.dns.some((d) => routeTo(snap, d).kind === "unreachable")
+					? ["name lookups wait for DNS servers they can't reach, and fail"]
+					: []),
+			],
+			fix: reach.length
+				? "the network gave no gateway: reconnect to renew the lease, or set the gateway in the interface's settings; a VPN that went away can take it along: restart it"
+				: "connect to a network: Wi-Fi or Ethernet",
+		},
+	];
+};
+
+const defaultRoutes: Rule = (snap) => {
+	// macOS gives no metrics: the service order in its Network settings decides
+	if (snap.environment === "macos") return [];
+	return FAMILIES.flatMap((f): Finding[] => {
+		const defaults = snap.routes.filter(
+			(r) => r.family === f && r.prefix === 0,
+		);
+		const best = Math.min(...defaults.map((r) => r.metric));
+		const tied = defaults.filter((r) => r.metric === best);
+		const ifaces = unique(tied.map((r) => r.iface));
+		if (ifaces.length < 2) return [];
+		return [
+			{
+				rule: "default-routes",
+				severity: "warning",
+				title: `${ifaces.length} default routes for IPv${f} with the same metric: ${ifaces.join(", ")}`,
+				details: [
+					...tied.map((r) => `${routeText(r)}, metric ${r.metric}`),
+					`${tied[0]?.iface} wins now, being first; which one does can change when either reconnects, and connections open through the other then break`,
+				],
+				fix:
+					snap.environment === "windows"
+						? "give one a lower interface metric, in an administrator PowerShell: Set-NetIPInterface -InterfaceAlias NAME -InterfaceMetric 10"
+						: `give one a lower metric: nmcli connection modify NAME ipv${f}.route-metric 50 with NetworkManager, or metric: under its route in netplan`,
+			},
+		];
+	});
+};
+
+const vpnAllTraffic: Rule = (snap) => {
+	const through = FAMILIES.map((f) => routeTo(snap, INTERNET[f])).filter(
+		(r): r is RouteResult & { route: Route } =>
+			!!r.route && VPN.includes(kindOf(snap, r.iface) ?? "loopback"),
+	);
+	if (!through.length) return [];
+	const vpns = unique(through.map((r) => r.route.iface));
+	// what stays off it: the local network, not docker's bridges
+	const off = snap.routes.filter((r) => {
+		const k = kindOf(snap, r.iface);
+		return (
+			r.prefix > 0 &&
+			k !== undefined &&
+			!INTERNAL.includes(k) &&
+			!VPN.includes(k) &&
+			!isLinkLocalNet(r)
+		);
+	});
+	return [
+		{
+			rule: "vpn-all-traffic",
+			severity: "info",
+			title: `all internet traffic goes through the VPN on ${vpns.join(", ")}`,
+			details: [
+				...through.map((r) => `IPv${r.family}: ${routeText(r.route)}`),
+				...(off.length ? [`stays off it: ${networks(off)}`] : []),
+			],
+			fix: "nothing to do when that is the point. When only some networks should use it (the company's), that is split tunnelling: a setting of the VPN, or of its administrator",
+		},
+	];
+};
+
+const PRIVATE: [string, number][] = [
+	["10.0.0.0", 8],
+	["172.16.0.0", 12],
+	["192.168.0.0", 16],
+	["100.64.0.0", 10],
+	["fc00::", 7],
+];
+const isPrivate = (ip: string) => PRIVATE.some(([n, p]) => inNetwork(ip, n, p));
+
+const dnsServers: Rule = (snap) => {
+	const all = snap.dns.map((server) => ({
+		server,
+		route: routeTo(snap, server),
+	}));
+	// a resolver on this machine (systemd-resolved, WSL's, dnsmasq) asks others in turn
+	const remote = all.filter(
+		(d) => d.route.kind !== "loopback" && d.route.kind !== "local",
+	);
+	const out: Finding[] = [];
+	// with no way out at all, no-default-route says it
+	const lost = offline(snap)
+		? []
+		: remote.filter((d) => d.route.kind === "unreachable");
+	const named = (ds: typeof all) => ds.map((d) => d.server).join(", ");
+	const remove =
+		"remove the server (resolv.conf, or the interface's DNS settings)";
+	if (lost.length) {
+		const others = remote.filter((d) => !lost.includes(d));
+		// an IPv6 server on a network that has no IPv6
+		const v6 =
+			lost.every((d) => d.route.family === 6) &&
+			routeTo(snap, INTERNET[6]).kind === "unreachable";
+		out.push({
+			rule: "dns-unreachable",
+			severity: others.length ? "warning" : "error",
+			title:
+				lost.length === 1
+					? `DNS server ${named(lost)} has no route`
+					: `${lost.length} DNS servers have no route: ${named(lost)}`,
+			details: [
+				others.length
+					? `a lookup that tries it waits for it to time out, then goes on to ${named(others)}`
+					: "every name lookup fails",
+			],
+			fix: v6
+				? `this network has no IPv6: ${remove}`
+				: `it probably belongs to a VPN or a network this machine has left: reconnect to it, or ${remove}`,
+		});
+	}
+	const astray = remote.filter(
+		(d) =>
+			d.route.kind === "gateway" &&
+			d.route.route?.prefix === 0 &&
+			isPrivate(d.server),
+	);
+	const [first] = astray;
+	if (first?.route.route)
+		out.push({
+			rule: "dns-private",
+			severity: "info",
+			title:
+				astray.length === 1
+					? `DNS server ${named(astray)} is a private address on none of this machine's networks`
+					: `DNS servers ${named(astray)} are private addresses on none of this machine's networks`,
+			details: [
+				`queries leave by the default route, via ${first.route.gateway} on ${first.route.iface}`,
+				"fine when the network beyond knows the address (a company's DNS); when it was a VPN's and the VPN has disconnected, lookups wait for it and fail",
+			],
+			fix: `nothing to do when the network knows it; when it was a VPN's, reconnect the VPN, or ${remove}`,
+		});
+	return out;
+};
+
+export const RULES: Rule[] = [
+	exposed,
+	portShared,
+	ipv6Only,
+	wslShadowed,
+	noDefaultRoute,
+	defaultRoutes,
+	vpnAllTraffic,
+	dnsServers,
+];
 
 const RANK: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
 
-/** Every finding, the most serious first, then by port. */
+/** Every finding, the most serious first, then by port: the routing ones, with none, first. */
 export function doctor(snap: Snapshot): Finding[] {
 	const ls = listeners(snap);
 	return RULES.flatMap((r) => r(snap, ls)).sort(
-		(a, b) => RANK[a.severity] - RANK[b.severity] || a.port - b.port,
+		(a, b) =>
+			RANK[a.severity] - RANK[b.severity] || (a.port ?? 0) - (b.port ?? 0),
 	);
 }

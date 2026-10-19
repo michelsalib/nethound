@@ -76,7 +76,7 @@ test("a runtime's renamed main thread gives way to the program's name", () => {
 	expect(snap.processes.find((p) => p.pid === 300)?.name).toBe("node");
 	expect(snap.processes.find((p) => p.pid === 400)?.name).toBe("curl");
 	expect(snap.users[101]).toBe("systemd-resolve");
-	expect(snap.dns).toEqual(["127.0.0.53"]);
+	expect(snap.dns).toEqual(["127.0.0.53", "192.168.1.1"]);
 	expect(snap.environment).toBe("linux");
 });
 

@@ -10,6 +10,7 @@ import type { Address, Container, Snapshot } from "./model.ts";
 import { annotate } from "./origin.ts";
 import { type Run, run as system } from "./run.ts";
 import { collectWindows } from "./windows/collect.ts";
+import { readWindowsPorts } from "./wsl.ts";
 
 export interface CollectOptions {
 	/** Default: the one nethound runs on. */
@@ -24,6 +25,8 @@ export interface CollectOptions {
 	containers?: Container[];
 	uid?: number;
 	hostname?: string;
+	/** In WSL: also the ports Windows listens on (nethound doctor), through `run`. */
+	windows?: boolean;
 }
 
 export function collect(o: CollectOptions = {}): Snapshot {
@@ -54,9 +57,14 @@ export function collect(o: CollectOptions = {}): Snapshot {
 		}
 	// the app that launched each, and the project of those whose directory says nothing
 	annotate(machine.processes, cache);
+	const windowsPorts =
+		o.windows && machine.environment === "wsl"
+			? readWindowsPorts(run)
+			: undefined;
 	return {
 		hostname: o.hostname ?? hostname(),
 		...machine,
+		...(windowsPorts && { windowsPorts }),
 		containers,
 		uid: o.uid ?? process.getuid?.(),
 	};

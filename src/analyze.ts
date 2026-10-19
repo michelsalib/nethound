@@ -180,7 +180,7 @@ function reachOf(
 }
 
 /** The programs that hold a published port for docker: docker-proxy, Docker Desktop's, podman's. */
-const DOCKER =
+export const DOCKER =
 	/docker|vpnkit|wslrelay|rootless|slirp4netns|gvproxy|containerd/i;
 
 const publishes = (

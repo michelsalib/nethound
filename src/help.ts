@@ -137,12 +137,16 @@ runs after 3 seconds: --force kills it at once.`,
 	},
 	doctor: {
 		usage: ["doctor"],
-		summary: "what is exposed that shouldn't be, and ports taken twice",
-		about: `Lists what is wrong with how this machine listens, each with what is behind it
-and how to fix it: databases, caches, debuggers and the like reachable from
-other machines (dev servers too, as notes), and ports held by two programs, with
-which one localhost reaches over IPv4 and over IPv6. Firewall rules are not taken
-into account. Exits 1 when there are errors.`,
+		summary:
+			"what is exposed that shouldn't be, ports taken twice, routes and DNS",
+		about: `Lists what is wrong with how this machine listens and routes, each with what is
+behind it and how to fix it: databases, caches, debuggers and the like reachable
+from other machines (dev servers too, as notes); ports held by two programs, with
+which one localhost reaches over IPv4 and over IPv6; servers that take IPv6 only;
+in WSL, Windows programs on a port WSL serves, which take Windows' localhost.
+Then the routes: no default route, two of them tied, a VPN taking all traffic,
+DNS servers with no route. Firewall rules are not taken into account. Exits 1
+when there are errors.`,
 		options: ["json", "no-docker"],
 		examples: ["nethound doctor", "sudo nethound doctor --json"],
 	},

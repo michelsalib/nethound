@@ -9,6 +9,18 @@ import { readUsers, scanProcesses } from "./processes.ts";
 import { readRoutes } from "./routes.ts";
 import { readSockets } from "./sockets.ts";
 
+const servers = (text: string) =>
+	[...text.matchAll(/^\s*nameserver\s+(\S+)/gm)].map((m) => m[1] ?? "");
+
+/** resolv.conf's servers; behind systemd-resolved's stub (127.0.0.53), the ones it asks too. */
+function nameServers(read: (p: string) => string): string[] {
+	const own = servers(read("etc/resolv.conf"));
+	if (!own.includes("127.0.0.53")) return own;
+	return [
+		...new Set([...own, ...servers(read("run/systemd/resolve/resolv.conf"))]),
+	];
+}
+
 export function collectLinux(
 	root: string,
 	addresses?: Record<string, Address[]>,
@@ -41,9 +53,7 @@ export function collectLinux(
 		sockets,
 		processes: scan.processes,
 		users: readUsers(join(root, "etc/passwd")),
-		dns: [...read("etc/resolv.conf").matchAll(/^\s*nameserver\s+(\S+)/gm)].map(
-			(m) => m[1] ?? "",
-		),
+		dns: nameServers(read),
 		hidden: scan.hidden,
 	};
 }
