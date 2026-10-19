@@ -15,6 +15,7 @@ export const pg: Container = {
 		{ proto: "tcp", hostIp: "0.0.0.0", hostPort: 5432, containerPort: 5432 },
 		{ proto: "tcp", hostIp: "::", hostPort: 5432, containerPort: 5432 },
 	],
+	pid: 600,
 };
 
 /** The machine scripts/fixture.py describes. */

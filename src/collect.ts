@@ -40,12 +40,13 @@ export function collect(o: CollectOptions = {}): Snapshot {
 	const run = o.run ?? system;
 	const root = o.root ?? "/";
 	const uid = o.uid ?? process.getuid?.();
+	const found = o.containers ?? readContainers();
 	const machine =
 		platform === "win32"
 			? collectWindows(run, o.firewall)
 			: platform === "darwin"
 				? collectDarwin(run)
-				: collectLinux(root, o.addresses);
+				: collectLinux(root, o.addresses, found);
 	if (o.firewall && platform !== "win32") {
 		const read = (p: string) => {
 			try {
@@ -63,7 +64,7 @@ export function collect(o: CollectOptions = {}): Snapshot {
 	// a container's network names a bridge on this machine only on Linux; Docker Desktop keeps
 	// them in its VM
 	const names = new Set(machine.interfaces.map((i) => i.name));
-	const containers = (o.containers ?? readContainers()).map((c) => ({
+	const containers = found.map((c) => ({
 		...c,
 		networks: c.networks.map((n) => ({
 			...n,

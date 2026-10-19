@@ -151,6 +151,22 @@ export interface Container {
 	project?: string;
 	networks: ContainerNetwork[];
 	ports: PublishedPort[];
+	/** Linux: its first process, whose /proc/PID/net shows the container's own sockets. */
+	pid?: number;
+}
+
+/** A network namespace other than nethound's: a container's, one of ip netns', rootless podman's. */
+export interface Namespace {
+	/** Its inode, as /proc/PID/ns/net names it; unknown for a container read by its pid alone. */
+	inode?: number;
+	/** The container it belongs to, by id. */
+	container?: string;
+	/** Its name in /run/netns (ip netns). */
+	name?: string;
+	/** The processes in it nethound sees. */
+	pids: number[];
+	/** Its listening sockets; undefined when they could not be read. */
+	sockets?: Socket[];
 }
 
 /** A condition of a netfilter rule, in the terms nethound judges a new inbound connection by. */
@@ -304,6 +320,8 @@ export interface Snapshot {
 	/** In WSL, for nethound doctor: the TCP ports Windows listens on, which its localhost reaches
 	 * before WSL's. */
 	windowsPorts?: WindowsPort[];
+	/** Linux: the other network namespaces, containers' first, with what listens in each. */
+	namespaces?: Namespace[];
 	/** For nethound doctor and who: what filters inbound connections. */
 	firewall?: Firewall;
 	/** Our uid: sockets of other users have no process unless we are root. */

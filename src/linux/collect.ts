@@ -3,8 +3,9 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Address, Snapshot } from "../model.ts";
+import type { Address, Container, Snapshot } from "../model.ts";
 import { readInterfaces, systemAddresses } from "./interfaces.ts";
+import { readNamespaces } from "./namespaces.ts";
 import { readUsers, scanProcesses } from "./processes.ts";
 import { readRoutes } from "./routes.ts";
 import { readSockets } from "./sockets.ts";
@@ -24,6 +25,7 @@ function nameServers(read: (p: string) => string): string[] {
 export function collectLinux(
 	root: string,
 	addresses?: Record<string, Address[]>,
+	containers: Container[] = [],
 ): Omit<Snapshot, "hostname" | "containers" | "uid"> {
 	const proc = join(root, "proc");
 	const read = (p: string) => {
@@ -52,6 +54,7 @@ export function collectLinux(
 		routes: readRoutes(proc),
 		sockets,
 		processes: scan.processes,
+		namespaces: readNamespaces(root, scan.processes, scan.owners, containers),
 		users: readUsers(join(root, "etc/passwd")),
 		dns: nameServers(read),
 		hidden: scan.hidden,

@@ -64,8 +64,9 @@ command.`,
 and the address inside it the port forwards to; the addresses it is bound to and
 the interfaces that reach it, and whether the firewall lets other machines in
 (its rule); and every client connected right now, with its process when it runs
-here. Also lists connections from this machine to PORT elsewhere. Exits 1 when
-there are none.`,
+here. On Linux, also what listens on PORT inside containers and other network
+namespaces, and what takes a published port in its container. Also lists
+connections from this machine to PORT elsewhere. Exits 1 when there are none.`,
 		options: ["json", "show-secrets", "no-docker"],
 		examples: ["nethound who 5432", "nethound who 443"],
 	},
@@ -144,7 +145,9 @@ runs after 3 seconds: --force kills it at once.`,
 behind it and how to fix it: databases, caches, debuggers and the like reachable
 from other machines (dev servers too, as notes); ports held by two programs, with
 which one localhost reaches over IPv4 and over IPv6; servers that take IPv6 only;
-in WSL, Windows programs on a port WSL serves, which take Windows' localhost.
+in WSL, Windows programs on a port WSL serves, which take Windows' localhost;
+ports docker publishes to a container where nothing listens, or only its own
+127.0.0.1.
 Then the routes: no default route, two of them tied, a VPN taking all traffic,
 DNS servers with no route. What the firewall blocks is a note, with the rule
 that blocks it. Exits 1 when there are errors.`,
@@ -155,9 +158,10 @@ that blocks it. Exits 1 when there are errors.`,
 		usage: ["map"],
 		summary: "how everything connects, interface by interface",
 		about: `The whole picture: the ports open on every interface; then each interface with
-its routes, the ports bound to it, the containers behind it, and the connections
-leaving through it; on the loopback, which local process talks to which. Ends
-with the DNS servers and the way to them.`,
+its routes, the ports bound to it, the containers behind it (and the ports each
+listens on inside, on Linux), and the connections leaving through it; on the
+loopback, which local process talks to which. Then what listens in other network
+namespaces, and the DNS servers with the way to them.`,
 		options: ["json", "no-docker"],
 		examples: ["nethound map"],
 	},

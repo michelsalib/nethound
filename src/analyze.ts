@@ -6,6 +6,7 @@ import type {
 	Endpoint,
 	Family,
 	Iface,
+	Namespace,
 	Process,
 	Proto,
 	PublishedPort,
@@ -380,6 +381,8 @@ function peerOf(snap: Snapshot, all: Listener[], s: Socket): Peer {
 export interface WhoReport {
 	port: number;
 	listeners: Listener[];
+	/** Inside containers and other namespaces: on that port, or published on it. */
+	inside: InsideListener[];
 	/** Connections from this machine to that port elsewhere. */
 	outbound: Connection[];
 	/** docker-proxy's connections to the container behind that port: one per client. */
@@ -391,6 +394,9 @@ export function who(snap: Snapshot, port: number): WhoReport {
 	return {
 		port,
 		listeners: listeners(snap).filter((l) => l.port === port),
+		inside: insideListeners(snap).filter(
+			(l) => l.port === port || l.published.some((p) => p.hostPort === port),
+		),
 		relayed: conns.filter(
 			(c) =>
 				c.direction === "out" &&
@@ -429,6 +435,8 @@ export interface MapReport {
 	/** Interfaces down with no address, named only. */
 	idle: string[];
 	dns: { server: string; route: RouteResult }[];
+	/** What listens inside containers and other namespaces. */
+	inside: InsideListener[];
 	hidden: number;
 }
 
@@ -483,8 +491,93 @@ export function map(snap: Snapshot): MapReport {
 		interfaces: views,
 		idle,
 		dns: snap.dns.map((server) => ({ server, route: routeTo(snap, server) })),
+		inside: insideListeners(snap),
 		hidden: snap.hidden,
 	};
+}
+
+/** A port that listens inside another network namespace: a container's own, which the host's
+ * sockets don't show. */
+export interface InsideListener {
+	proto: Proto;
+	port: number;
+	addresses: string[];
+	namespace: Namespace;
+	container?: Container;
+	/** Its process, when nethound may see who holds the socket (root). */
+	process?: Process;
+	/** The host ports docker publishes it on. */
+	published: PublishedPort[];
+	sockets: Socket[];
+}
+
+/** Every port listening in another namespace, by namespace, port and process. */
+export function insideListeners(snap: Snapshot): InsideListener[] {
+	const out: InsideListener[] = [];
+	for (const ns of snap.namespaces ?? []) {
+		const container = snap.containers.find((c) => c.id === ns.container);
+		const groups = new Map<string, InsideListener>();
+		for (const s of ns.sockets ?? []) {
+			const key = `${s.proto}/${s.local.port}/${s.pid ?? "?"}`;
+			let l = groups.get(key);
+			if (!l) {
+				l = {
+					proto: s.proto,
+					port: s.local.port,
+					addresses: [],
+					namespace: ns,
+					container,
+					process: processOf(snap, s.pid),
+					published: (container?.ports ?? []).filter(
+						(p) => p.proto === s.proto && p.containerPort === s.local.port,
+					),
+					sockets: [],
+				};
+				groups.set(key, l);
+				out.push(l);
+			}
+			l.sockets.push(s);
+			if (!l.addresses.includes(s.local.address))
+				l.addresses.push(s.local.address);
+		}
+	}
+	return out.sort((a, b) => a.port - b.port || a.proto.localeCompare(b.proto));
+}
+
+/** What listens in a container on a port it publishes: nothing, its own loopback only (which
+ * docker's forwarding never reaches), a server, or unknown when its sockets weren't read. */
+export function publishedTarget(
+	snap: Snapshot,
+	c: Container,
+	p: PublishedPort,
+): {
+	state: "unknown" | "nothing" | "loopback" | "ok";
+	inside: InsideListener[];
+} {
+	const ns = snap.namespaces?.find((n) => n.container === c.id);
+	if (!ns?.sockets) return { state: "unknown", inside: [] };
+	const inside = insideListeners(snap).filter(
+		(l) =>
+			l.container?.id === c.id &&
+			l.proto === p.proto &&
+			l.port === p.containerPort,
+	);
+	if (!inside.length) return { state: "nothing", inside };
+	return {
+		state: inside.every((l) => l.addresses.every(isLoopback))
+			? "loopback"
+			: "ok",
+		inside,
+	};
+}
+
+/** A namespace by what it is: "container redis", "netns blue", "the namespace of python3 1234". */
+export function namespaceLabel(snap: Snapshot, ns: Namespace): string {
+	const c = snap.containers.find((x) => x.id === ns.container);
+	if (c) return `container ${c.name}`;
+	if (ns.name) return `netns ${ns.name}`;
+	const p = processOf(snap, ns.pids[0]);
+	return p ? `the namespace of ${p.name} ${p.pid}` : `namespace ${ns.inode}`;
 }
 
 /** Sockets nethound could not tie to a process: other users', without root. */

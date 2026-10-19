@@ -21,7 +21,8 @@ These are worth knowing when you judge what counts as a vulnerability:
   (`kill -y` skips the question). Stopping with what started a server climbs only through package
   runners (`npm`, `bun run`, a watcher, a `sh -c` they started), never into an interactive shell, an IDE,
   another user's process or nethound itself. What it reads:
-  - on Linux, `/proc` (sockets, and each process's open files and command line), `/sys/class/net`,
+  - on Linux, `/proc` (sockets, each process's open files, command line and network namespace, and
+    the sockets of each container's and namespace's own `/proc/PID/net`), `/run/netns`, `/sys/class/net`,
     `/etc/resolv.conf` and systemd-resolved's `/run/systemd/resolve/resolv.conf`;
   - on macOS, what `netstat`, `lsof`, `ifconfig`, `networksetup`, `ps` and `/etc/resolv.conf` print;
   - on Windows, what one PowerShell script prints, from `Get-NetTCPConnection`, `Get-NetUDPEndpoint`,

@@ -4,8 +4,10 @@
 
 import {
 	DOCKER,
+	insideListeners,
 	type Listener,
 	listeners,
+	publishedTarget,
 	type RouteResult,
 	routeTo,
 } from "./analyze.ts";
@@ -423,6 +425,66 @@ const wslShadowed: Rule = (snap, ls) => {
 	});
 };
 
+/** A port docker publishes, to a container where nothing takes it: connections are reset. */
+const publishedNowhere: Rule = (snap, ls) =>
+	ls.flatMap((l): Finding[] => {
+		const c = l.container;
+		const p = l.published;
+		if (!c || !p) return [];
+		const t = publishedTarget(snap, c, p);
+		const base = {
+			rule: "published-nowhere",
+			severity: "warning" as const,
+			proto: l.proto,
+			port: l.port,
+		};
+		// keeping the host address it is published on
+		const host = isWildcard(p.hostIp) ? "" : `${p.hostIp}:`;
+		const map = (inside: number) =>
+			`-p ${host}${l.port}:${inside} (in compose: "${host}${l.port}:${inside}")`;
+		if (t.state === "nothing") {
+			// what it does listen on, to other containers and the published ports
+			const elsewhere = insideListeners(snap).filter(
+				(x) =>
+					x.container?.id === c.id &&
+					x.proto === l.proto &&
+					!x.addresses.every(isLoopback),
+			);
+			const [only] = elsewhere;
+			return [
+				{
+					...base,
+					title: `${l.proto} ${l.port} goes to ${p.containerPort} in container ${c.name}, where nothing listens`,
+					details: [
+						"docker accepts the connection, finds nobody behind it, and closes it",
+						elsewhere.length
+							? `in the container, ${elsewhere.map((x) => x.port).join(", ")} ${elsewhere.length > 1 ? "listen" : "listens"} instead`
+							: "nothing in it listens on the network: still starting, or its server didn't start (docker logs)",
+					],
+					fix:
+						only && elsewhere.length === 1
+							? `publish the port it listens on: ${map(only.port)}`
+							: "start its server, or publish the port it listens on",
+				},
+			];
+		}
+		if (t.state === "loopback") {
+			const [x] = t.inside;
+			const ip = c.networks.find((n) => n.ip)?.ip;
+			return [
+				{
+					...base,
+					title: `${l.proto} ${l.port} goes to container ${c.name}, where ${p.containerPort} listens on ${x?.addresses.join(", ")} only`,
+					details: [
+						`docker forwards to the container's own address${ip ? ` (${ip})` : ""}, which its server doesn't take: connections are reset`,
+					],
+					fix: "bind it to 0.0.0.0 in the container: a dev server's --host 0.0.0.0 (vite, flask run, next -H), or HOST=0.0.0.0",
+				},
+			];
+		}
+		return [];
+	});
+
 /** Any address on the internet: where traffic to it goes is where the internet goes. */
 const INTERNET: Record<Family, string> = {
 	4: "1.1.1.1",
@@ -617,6 +679,7 @@ export const RULES: Rule[] = [
 	portShared,
 	ipv6Only,
 	wslShadowed,
+	publishedNowhere,
 	noDefaultRoute,
 	defaultRoutes,
 	vpnAllTraffic,

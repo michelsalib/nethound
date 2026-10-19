@@ -1,16 +1,19 @@
-import type {
-	Connection,
-	IfaceView,
-	Listener,
-	MapReport,
-	Peer,
-	RouteResult,
-	WhoReport,
+import {
+	type Connection,
+	type IfaceView,
+	type InsideListener,
+	type Listener,
+	type MapReport,
+	namespaceLabel,
+	type Peer,
+	publishedTarget,
+	type RouteResult,
+	type WhoReport,
 } from "./analyze.ts";
 import type { Finding } from "./doctor.ts";
 import { outside, verdictFor } from "./firewall.ts";
 import type { Container, Iface, Process, Route, Snapshot } from "./model.ts";
-import { endpoint, isWildcard } from "./net.ts";
+import { endpoint, isLoopback, isWildcard } from "./net.ts";
 import { startedBy } from "./stop.ts";
 
 export interface RenderOptions {
@@ -133,6 +136,10 @@ const connOwner = (x: Connection) =>
 				: "closing, no process";
 
 /** Who is behind a listener: its container, its process, or at least its user. */
+/** Who holds a socket inside a container: its process as root, else whoever it may be. */
+const insideOwner = (x?: InsideListener) =>
+	x?.process ? procLabel(x.process) : "a process (sudo to see which)";
+
 export function ownerLabel(l: Listener, o?: RenderOptions): string {
 	if (l.container)
 		return `container ${l.container.name}${l.published ? ` :${l.published.containerPort}` : ""}`;
@@ -365,7 +372,7 @@ export function renderWho(
 ): string {
 	const c = paint(o);
 	const out: string[] = [];
-	if (!r.listeners.length && !r.outbound.length)
+	if (!r.listeners.length && !r.outbound.length && !r.inside.length)
 		return `nothing listens on port ${r.port}, and nothing here talks to it`;
 	for (const l of r.listeners) {
 		out.push(`${c.bold(`${l.proto} ${l.port}`)}  ${ownerLabel(l, o)}`);
@@ -420,6 +427,34 @@ export function renderWho(
 					`→ ${n.ip ?? "?"}:${l.published?.containerPort ?? l.port} on ${n.name}${n.bridge ? c.dim(` (${n.bridge})`) : ""}`,
 				]);
 		}
+		if (snap && l.container && l.published) {
+			const t = publishedTarget(snap, l.container, l.published);
+			const cp = l.published.containerPort;
+			if (t.state === "nothing")
+				kv.push([
+					"inside",
+					c.red(
+						`nothing listens on ${cp} in the container: connections are reset`,
+					),
+				]);
+			else if (t.state === "loopback")
+				kv.push([
+					"inside",
+					c.red(
+						`${insideOwner(t.inside[0])} listens on ${t.inside[0]?.addresses.join(", ")} only: the published port can't reach it`,
+					),
+				]);
+			else if (t.state === "ok")
+				kv.push([
+					"inside",
+					t.inside
+						.map(
+							(x) =>
+								`${insideOwner(x)} on ${x.addresses.map((a) => endpoint({ address: a, port: cp })).join(", ")}`,
+						)
+						.join(", "),
+				]);
+		}
 		kv.push(["bound to", l.addresses.join(", ")]);
 		kv.push([
 			"reachable",
@@ -467,6 +502,37 @@ export function renderWho(
 			]);
 		for (const [k, v] of kv) out.push(`  ${c.dim(k.padEnd(10))} ${v}`);
 		out.push("");
+	}
+	// inside containers and other namespaces, unless a published port above already says it
+	const shown = new Set(
+		r.listeners.flatMap((l) =>
+			l.container && l.published
+				? [`${l.container.id} ${l.proto} ${l.published.containerPort}`]
+				: [],
+		),
+	);
+	for (const x of r.inside) {
+		if (x.container && shown.has(`${x.container.id} ${x.proto} ${x.port}`))
+			continue;
+		const where = snap ? namespaceLabel(snap, x.namespace) : "a namespace";
+		const ip = x.container?.networks.find((n) => n.ip)?.ip;
+		const pub = x.published.map((p) => `:${p.hostPort}`).join(" ");
+		out.push(
+			`${c.bold(`${x.proto} ${x.port}`)}  inside ${where}${pub ? c.dim(`  published on ${pub}`) : c.dim("  not published")}`,
+		);
+		const kv: [string, string][] = [];
+		kv.push(["process", insideOwner(x)]);
+		kv.push(["bound to", x.addresses.join(", ")]);
+		const local = x.addresses.every(isLoopback);
+		kv.push([
+			"reachable",
+			local
+				? "inside it only"
+				: x.container
+					? `from its network's containers${ip ? `, and from this machine at ${endpoint({ address: ip, port: x.port })}` : ""}`
+					: "from that namespace's interfaces",
+		]);
+		out.push(...kv.map(([k, v]) => `  ${c.dim(k.padEnd(10))} ${v}`), "");
 	}
 	if (r.outbound.length) {
 		out.push(c.bold(`connections to port ${r.port} elsewhere`));
@@ -545,7 +611,7 @@ export function renderMap(m: MapReport, o: RenderOptions): string {
 			out.push(`  ${c.green("listen")}  ${listenLine(l)}`);
 		for (const x of v.containers)
 			out.push(
-				`  ${c.blue("holds")}   ${x.container.name}${x.ip ? ` ${x.ip}` : ""}${portsOf(x.container)}`,
+				`  ${c.blue("holds")}   ${x.container.name}${x.ip ? ` ${x.ip}` : ""}${insidePorts(m.inside, x.container)}${portsOf(x.container)}`,
 			);
 		if (i.members.length)
 			out.push(
@@ -560,6 +626,17 @@ export function renderMap(m: MapReport, o: RenderOptions): string {
 		out.push("");
 	}
 	if (m.idle.length) out.push(c.dim(`down, no address: ${m.idle.join(", ")}`));
+	// namespaces that are no container: ip netns', a sandbox's, rootless podman's
+	const others = m.inside.filter((x) => !x.container);
+	if (others.length) {
+		if (out.at(-1) !== "") out.push("");
+		out.push(c.yellow("in other network namespaces"));
+		for (const x of others)
+			out.push(
+				`  ${c.bold(`${x.proto} ${x.port}`.padEnd(9))} ${insideOwner(x)}  ${c.dim(`${x.addresses.join(", ")}${x.namespace.name ? `, netns ${x.namespace.name}` : ""}`)}`,
+			);
+		out.push("");
+	}
 	if (m.dns.length) {
 		out.push(
 			`${c.dim("dns")}  ${m.dns.map((d) => `${d.server} ${c.dim(d.route.kind === "loopback" || d.route.kind === "local" ? "(local resolver)" : routeVia(d.route))}`).join(", ")}`,
@@ -572,6 +649,20 @@ export function renderMap(m: MapReport, o: RenderOptions): string {
 			),
 		);
 	return out.join("\n").trimEnd();
+}
+
+/** What a container listens on, its loopback left out: "  listens 5432 udp 53". */
+function insidePorts(all: InsideListener[], ct: Container): string {
+	const ports = [
+		...new Set(
+			all
+				.filter(
+					(x) => x.container?.id === ct.id && !x.addresses.every(isLoopback),
+				)
+				.map((x) => (x.proto === "tcp" ? `${x.port}` : `udp ${x.port}`)),
+		),
+	];
+	return ports.length ? `  listens ${ports.join(" ")}` : "";
 }
 
 function portsOf(ct: Container): string {
@@ -680,6 +771,20 @@ export function renderDoctor(findings: Finding[], o: RenderOptions): string {
 	return `${blocks.join("\n\n")}\n\n${c.bold(summary)}`;
 }
 
+export const insideJson = (x: InsideListener) => ({
+	proto: x.proto,
+	port: x.port,
+	addresses: x.addresses,
+	namespace: {
+		inode: x.namespace.inode,
+		container: x.namespace.container,
+		name: x.namespace.name,
+	},
+	container: containerJson(x.container),
+	process: procJson(x.process),
+	published: x.published,
+});
+
 export const listenerJson = (l: Listener) => ({
 	proto: l.proto,
 	port: l.port,
@@ -709,4 +814,5 @@ export const mapJson = (m: MapReport) => ({
 	everywhere: m.everywhere.map(listenerJson),
 	interfaces: m.interfaces.map(ifaceViewJson),
 	dns: m.dns.map((d) => ({ server: d.server, route: routeJson(d.route) })),
+	inside: m.inside.map(insideJson),
 });

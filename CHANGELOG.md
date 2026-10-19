@@ -21,6 +21,14 @@ All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow 
   each network's profile and the inbound rules; on macOS, the application firewall. `doctor` makes
   what the firewall blocks a note.
 
+- On Linux, what listens inside containers and other network namespaces: `who PORT` names a port
+  that listens only inside a container (or `ip netns`, rootless podman), and what takes a published
+  port in its container; `map` lists each container's own ports and the other namespaces'. A
+  container's sockets come from its first process's `/proc/PID/net`, which needs no root.
+- `doctor` finds a port docker publishes to a container where nothing listens (and the port it
+  listens on instead), or where its server listens on the container's own `127.0.0.1`, which docker
+  never reaches: in both, connections are reset.
+
 ### Changed
 
 - Behind systemd-resolved's `127.0.0.53`, the DNS servers it asks are listed too (`map`, `--json`).
