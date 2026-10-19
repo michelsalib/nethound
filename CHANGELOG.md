@@ -14,6 +14,13 @@ All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow 
 - `doctor` in WSL finds a Windows program on a port a WSL server holds: Windows' `localhost` reaches
   it instead of WSL's. Windows' ports come from its own `netstat.exe`, in half a second.
 
+- `who` and `doctor` read the firewall: whether another machine gets in, and the rule or default that
+  decides, or `lets some machines in` when a rule depends on the client. On Linux as root, netfilter's
+  own rules (ufw's, firewalld's, docker's, by hand), walked as the kernel does, the forward chains for
+  docker's published ports; without root, ufw's and firewalld's settings. On Windows, the profiles,
+  each network's profile and the inbound rules; on macOS, the application firewall. `doctor` makes
+  what the firewall blocks a note.
+
 ### Changed
 
 - Behind systemd-resolved's `127.0.0.53`, the DNS servers it asks are listed too (`map`, `--json`).

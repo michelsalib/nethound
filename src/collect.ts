@@ -1,11 +1,15 @@
 // Reads one Snapshot of the machine, the way its OS tells: /proc and /sys on Linux, netstat,
 // lsof and ifconfig on macOS, PowerShell on Windows. Docker is asked the same way everywhere.
 
+import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
+import { join } from "node:path";
 import { collectDarwin } from "./darwin/collect.ts";
+import { readMacFirewall } from "./darwin/firewall.ts";
 import { readContainers } from "./docker.ts";
 import { checkoutOf } from "./git.ts";
 import { collectLinux } from "./linux/collect.ts";
+import { readLinuxFirewall } from "./linux/firewall.ts";
 import type { Address, Container, Snapshot } from "./model.ts";
 import { annotate } from "./origin.ts";
 import { type Run, run as system } from "./run.ts";
@@ -27,17 +31,35 @@ export interface CollectOptions {
 	hostname?: string;
 	/** In WSL: also the ports Windows listens on (nethound doctor), through `run`. */
 	windows?: boolean;
+	/** Also what the firewall lets in (nethound doctor and who). */
+	firewall?: boolean;
 }
 
 export function collect(o: CollectOptions = {}): Snapshot {
 	const platform = o.platform ?? process.platform;
 	const run = o.run ?? system;
+	const root = o.root ?? "/";
+	const uid = o.uid ?? process.getuid?.();
 	const machine =
 		platform === "win32"
-			? collectWindows(run)
+			? collectWindows(run, o.firewall)
 			: platform === "darwin"
 				? collectDarwin(run)
-				: collectLinux(o.root ?? "/", o.addresses);
+				: collectLinux(root, o.addresses);
+	if (o.firewall && platform !== "win32") {
+		const read = (p: string) => {
+			try {
+				return readFileSync(join(root, p), "utf8");
+			} catch {
+				return "";
+			}
+		};
+		const firewall =
+			platform === "darwin"
+				? readMacFirewall(run)
+				: readLinuxFirewall(root, read, run, machine.processes, uid);
+		if (firewall) machine.firewall = firewall;
+	}
 	// a container's network names a bridge on this machine only on Linux; Docker Desktop keeps
 	// them in its VM
 	const names = new Set(machine.interfaces.map((i) => i.name));
@@ -66,6 +88,6 @@ export function collect(o: CollectOptions = {}): Snapshot {
 		...machine,
 		...(windowsPorts && { windowsPorts }),
 		containers,
-		uid: o.uid ?? process.getuid?.(),
+		uid,
 	};
 }

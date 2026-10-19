@@ -62,9 +62,10 @@ command.`,
 		summary: "what listens on PORT, who can reach it, who is connected to it",
 		about: `Shows what listens on PORT: the process and its command line, or the container
 and the address inside it the port forwards to; the addresses it is bound to and
-the interfaces that reach it; and every client connected right now, with its
-process when it runs here. Also lists connections from this machine to PORT
-elsewhere. Exits 1 when there are none.`,
+the interfaces that reach it, and whether the firewall lets other machines in
+(its rule); and every client connected right now, with its process when it runs
+here. Also lists connections from this machine to PORT elsewhere. Exits 1 when
+there are none.`,
 		options: ["json", "show-secrets", "no-docker"],
 		examples: ["nethound who 5432", "nethound who 443"],
 	},
@@ -145,8 +146,8 @@ from other machines (dev servers too, as notes); ports held by two programs, wit
 which one localhost reaches over IPv4 and over IPv6; servers that take IPv6 only;
 in WSL, Windows programs on a port WSL serves, which take Windows' localhost.
 Then the routes: no default route, two of them tied, a VPN taking all traffic,
-DNS servers with no route. Firewall rules are not taken into account. Exits 1
-when there are errors.`,
+DNS servers with no route. What the firewall blocks is a note, with the rule
+that blocks it. Exits 1 when there are errors.`,
 		options: ["json", "no-docker"],
 		examples: ["nethound doctor", "sudo nethound doctor --json"],
 	},

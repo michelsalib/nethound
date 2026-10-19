@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone>
+  <short>Public</short>
+  <description>For use in public areas. You do not trust the other computers on networks to not harm your computer. Only selected incoming connections are accepted.</description>
+  <service name="ssh"/>
+  <service name="mdns"/>
+  <service name="dhcpv6-client"/>
+  <service name="http"/>
+  <port port="8080" protocol="tcp"/>
+  <rule family="ipv4">
+    <source address="10.0.0.0/8"/>
+    <port port="5432" protocol="tcp"/>
+    <accept/>
+  </rule>
+  <forward/>
+</zone>

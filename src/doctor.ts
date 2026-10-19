@@ -9,6 +9,7 @@ import {
 	type RouteResult,
 	routeTo,
 } from "./analyze.ts";
+import { INTERNAL, outside, verdictFor } from "./firewall.ts";
 import type { Family, Iface, Route, Snapshot, Socket } from "./model.ts";
 import { inNetwork, isLoopback, isWildcard } from "./net.ts";
 
@@ -137,17 +138,6 @@ const SERVICES: Service[] = [
 	},
 ];
 
-const INTERNAL: Iface["kind"][] = ["loopback", "bridge", "veth", "virtual"];
-
-/** The interfaces that lead off this machine: not the loopback, docker's bridges or VM switches. */
-function outside(snap: Snapshot, l: Listener): string[] {
-	const kind = new Map(snap.interfaces.map((i) => [i.name, i.kind]));
-	return l.reach.interfaces.filter((n) => {
-		const k = kind.get(n);
-		return k !== undefined && !INTERNAL.includes(k);
-	});
-}
-
 /** The service a listener is: a container by its image or port, a process by its name, else its port. */
 function serviceOf(l: Listener): Service | undefined {
 	if (l.container) {
@@ -190,16 +180,29 @@ const exposed: Rule = (snap, ls) =>
 		const where =
 			l.reach.scope === "everywhere" ? "every interface" : via.join(", ");
 		const container = l.container && l.published;
+		const fw = verdictFor(snap, l, via);
+		const blocked = fw?.result === "blocked";
 		return [
 			{
 				rule: "exposed",
-				severity: s.severity,
+				// bound to the network, but the firewall keeps it here: fine until the firewall changes
+				severity: blocked ? "info" : s.severity,
 				proto: l.proto,
 				port: l.port,
-				title: `${s.name} on ${l.proto} ${l.port} is reachable from ${where}`,
+				title: blocked
+					? `${s.name} on ${l.proto} ${l.port} is bound to ${where}, but the firewall blocks it`
+					: `${s.name} on ${l.proto} ${l.port} is reachable from ${where}`,
 				details: [
 					`${owner(l)}, bound to ${l.addresses.join(", ")}`,
-					`any machine that can reach ${via.join(", ")} ${s.risk}, unless a firewall stops it`,
+					...(blocked
+						? [
+								`firewall: ${fw.why}`,
+								"fine while the firewall stays as it is; bound to this machine, it wouldn't depend on it",
+							]
+						: [
+								`any machine that can reach ${via.join(", ")} ${s.risk}${fw ? "" : ", unless a firewall stops it"}`,
+								...(fw ? [`firewall: ${fw.why}`] : []),
+							]),
 					...(snap.environment === "wsl"
 						? [
 								"in WSL that is Windows itself, and other machines too with mirrored networking or a port Windows forwards",

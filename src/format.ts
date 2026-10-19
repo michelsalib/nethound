@@ -8,6 +8,7 @@ import type {
 	WhoReport,
 } from "./analyze.ts";
 import type { Finding } from "./doctor.ts";
+import { outside, verdictFor } from "./firewall.ts";
 import type { Container, Iface, Process, Route, Snapshot } from "./model.ts";
 import { endpoint, isWildcard } from "./net.ts";
 import { startedBy } from "./stop.ts";
@@ -427,7 +428,20 @@ export function renderWho(
 					? c.dim(`: ${l.reach.interfaces.join(", ")}`)
 					: ""),
 		]);
-		if (l.reach.scope === "everywhere")
+		const via = snap ? outside(snap, l) : [];
+		const fw = snap && via.length ? verdictFor(snap, l, via) : undefined;
+		if (fw)
+			kv.push([
+				"firewall",
+				fw.result === "blocked"
+					? c.green(`blocks other machines: ${fw.why}`)
+					: fw.result === "unknown"
+						? c.dim(fw.why)
+						: c.yellow(
+								`${fw.result === "open" ? "lets other machines in" : "lets some machines in"}: ${fw.why}`,
+							),
+			]);
+		else if (l.reach.scope === "everywhere")
 			kv.push([
 				"",
 				c.yellow(

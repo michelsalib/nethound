@@ -211,6 +211,7 @@ async function main(argv: string[]): Promise<number> {
 	const snap: Snapshot = collect({
 		...(values["no-docker"] && { containers: [] }),
 		windows: command === "doctor",
+		firewall: command === "doctor" || command === "who",
 	});
 	if (!values["show-secrets"])
 		for (const p of snap.processes) p.cmd = maskCmd(p.cmd);

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<service>
+  <short>mDNS</short>
+  <port protocol="udp" port="5353"/>
+  <destination ipv4="224.0.0.251" ipv6="ff02::fb"/>
+</service>
