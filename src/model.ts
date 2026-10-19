@@ -186,6 +186,8 @@ export interface NfMatch {
 		| "nfproto"
 		/** the connection was DNAT'ed (nft's ct status dnat): forwarded to a container */
 		| "dnat"
+		/** what an ordinary new connection never carries: an IPv6 routing header */
+		| "never"
 		/** anything else, which may or may not match: its text */
 		| "other";
 	not?: boolean;

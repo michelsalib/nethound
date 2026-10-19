@@ -131,6 +131,11 @@ export function parseIptablesRule(line: string): {
 				add("ct", val.split(","));
 				i++;
 				break;
+			// IPv6 routing headers (ufw drops type 0): no ordinary connection has one
+			case "--rt-type":
+				add("never", [val]);
+				i++;
+				break;
 			case "--dst-type":
 				add("dsttype", val.split(","));
 				i++;

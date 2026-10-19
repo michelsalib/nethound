@@ -91,6 +91,9 @@ function holds(m: NfMatch, p: Packet): Tri {
 		case "dnat":
 			r = p.oif !== undefined;
 			break;
+		case "never":
+			r = false;
+			break;
 		case "ct":
 			// a new connection: the first packet
 			r = any((v) => v.toUpperCase() === "NEW");
@@ -292,9 +295,9 @@ function netfilterVerdict(
 	iface: string,
 ): Verdict {
 	const name = fw.name;
-	const container = l.container && l.published;
-	const net = l.container?.networks.find((n) => n.bridge && n.ip);
-	if (container && !net)
+	const published = l.container && l.published;
+	const nets = l.container?.networks.filter((n) => n.bridge && n.ip) ?? [];
+	if (published && !nets.length)
 		return {
 			result: "unknown",
 			why: "its container's network is not on this machine",
@@ -304,24 +307,42 @@ function netfilterVerdict(
 		snap.interfaces
 			.find((i) => i.name === iface)
 			?.addresses.map((a) => a.address) ?? [];
-	const out: Verdict[] = families(l).map((family) => {
+	const fams = families(l);
+	const out: Verdict[] = fams.map((family) => {
 		const at = l.addresses.some(isWildcard)
 			? own.filter((a) => a.includes(":") === (family === 6))
 			: l.addresses.filter((a) => a.includes(":") === (family === 6));
-		const p: Packet = container
+		// forwarded to the container's address in that family; with none (IPv6 to a container that
+		// has only IPv4), docker-proxy takes the connection on this machine
+		const net = nets.find((n) => n.ip?.includes(":") === (family === 6));
+		const p: Packet = net
 			? {
 					family,
 					proto: l.proto,
 					dport: l.published?.containerPort ?? l.port,
 					iif: iface,
-					oif: net?.bridge,
-					daddrs: net?.ip ? [net.ip] : [],
+					oif: net.bridge,
+					daddrs: net.ip ? [net.ip] : [],
 				}
 			: { family, proto: l.proto, dport: l.port, iif: iface, daddrs: at };
-		const v = evaluate(fw.tables, container ? "forward" : "input", p);
-		return describe(name, v, !!container);
+		return describe(
+			name,
+			evaluate(fw.tables, net ? "forward" : "input", p),
+			!!net,
+		);
 	});
-	return combine(out);
+	const [first] = out;
+	if (!first) return { result: "unknown", why: "no way in to judge" };
+	// the same answer for both families (ufw's rule for each): said once
+	if (out.every((v) => v.result === first.result)) return first;
+	// they differ (an iptables rule for IPv4 alone): each, the most open first
+	const ordered = fams
+		.map((f, i) => ({ f, v: out[i] as Verdict }))
+		.sort((a, b) => RANK.indexOf(a.v.result) - RANK.indexOf(b.v.result));
+	return {
+		result: ordered[0]?.v.result ?? "unknown",
+		why: ordered.map(({ f, v }) => `over IPv${f}, ${v.why}`).join("; "),
+	};
 }
 
 function describe(name: string, v: NfVerdict, forwarded: boolean): Verdict {
@@ -357,9 +378,12 @@ function describe(name: string, v: NfVerdict, forwarded: boolean): Verdict {
 	};
 }
 
+/** From the most open to the most closed. */
+const RANK: Verdict["result"][] = ["open", "partial", "unknown", "blocked"];
+
 /** One verdict for several ways in: open when one is. */
 function combine(vs: Verdict[]): Verdict {
-	for (const r of ["open", "partial", "unknown", "blocked"] as const) {
+	for (const r of RANK) {
 		const v = vs.find((x) => x.result === r);
 		if (v) return v;
 	}
