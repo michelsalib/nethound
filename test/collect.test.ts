@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseInspect } from "../src/docker.ts";
+import { collectLinux } from "../src/linux/collect.ts";
 import { maskCmd } from "../src/model.ts";
 import { fixture } from "./helpers.ts";
 
@@ -137,4 +141,21 @@ test("docker inspect: networks, their bridge, published ports", () => {
 		],
 	});
 	expect(parseInspect("not json")).toEqual([]);
+});
+
+test("WSL is told by its own files, not by its kernel alone: a container on it is no WSL", () => {
+	const root = mkdtempSync(join(tmpdir(), "nethound-wsl-"));
+	try {
+		mkdirSync(join(root, "proc/sys/kernel"), { recursive: true });
+		writeFileSync(
+			join(root, "proc/sys/kernel/osrelease"),
+			"6.6.87.2-microsoft-standard-WSL2\n",
+		);
+		const environment = () => collectLinux(root, {}).environment;
+		expect(environment()).toBe("linux");
+		mkdirSync(join(root, "run/WSL"), { recursive: true });
+		expect(environment()).toBe("wsl");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });

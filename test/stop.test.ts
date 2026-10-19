@@ -45,6 +45,16 @@ test("npm and nodemon are node scripts: found by what they run", () => {
 	expect(pids(treeOf(snap, 50, 999))).toEqual([20, 30, 40, 50]);
 });
 
+test("npm renamed after its command, as it does since npm 7: still npm", () => {
+	const snap = machine([
+		p(10, 1, "bash", "bash"),
+		p(20, 10, "npm run dev", "npm run dev"),
+		p(30, 20, "sh", "sh -c vite --host 127.0.0.1"),
+		p(40, 30, "node", "node /app/node_modules/.bin/vite --host 127.0.0.1"),
+	]);
+	expect(pids(treeOf(snap, 40, 999))).toEqual([20, 30, 40]);
+});
+
 test("an agent, an IDE or a tool in node is not a runner, nor the bash -c it started", () => {
 	const snap = machine([
 		p(

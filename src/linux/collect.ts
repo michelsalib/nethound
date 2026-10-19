@@ -1,7 +1,7 @@
 // Linux: everything from /proc, /sys and /etc. Every path is relative to `root`, so tests can
 // point it at a fixture tree instead of the real machine.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Address, Container, Snapshot } from "../model.ts";
 import { readInterfaces, systemAddresses } from "./interfaces.ts";
@@ -44,9 +44,14 @@ export function collectLinux(
 		...(v6only && s.local.address === "::" && { v6only: true }),
 	}));
 	return {
-		environment: /microsoft|wsl/i.test(read("proc/sys/kernel/osrelease"))
-			? "wsl"
-			: "linux",
+		// WSL's kernel, and WSL's own files: a container on that kernel is no WSL, Windows forwards
+		// nothing to it
+		environment:
+			/microsoft|wsl/i.test(read("proc/sys/kernel/osrelease")) &&
+			(existsSync(join(root, "run/WSL")) ||
+				existsSync(join(proc, "sys/fs/binfmt_misc/WSLInterop")))
+				? "wsl"
+				: "linux",
 		interfaces: readInterfaces(
 			join(root, "sys"),
 			addresses ?? systemAddresses(),

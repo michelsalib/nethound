@@ -23,6 +23,10 @@ gateway does it leave? nethound answers those in one command, by reading what th
 knows (`/proc` and `/sys` on Linux, `netstat` and `lsof` on macOS, PowerShell on Windows) and asking
 docker which container sits behind each published port.
 
+<p align="center">
+  <img src="docs/demo.gif" width="860" alt="Two worktrees of one app each run vite on port 5173. nethound doctor says localhost:5173 reaches main's server over IPv4 and the feat/checkout worktree's over IPv6; nethound who 5173 shows each one's command, checkout, branch and the npm run dev that started it; nethound watch lists every port with its worktree and branch, selects main's server and stops it with the npm that started it">
+</p>
+
 **Try it, nothing to install:**
 
 ```sh

@@ -260,12 +260,13 @@ function overlap(a: Listener, b: Listener): boolean {
 	);
 }
 
-/** One owner per program: a server's workers (nginx, gunicorn) share their port on purpose. */
+/** One owner per program: a server's workers (nginx, gunicorn) share their port on purpose, from
+ * one directory; the same program in two checkouts is two servers. */
 const ownerKey = (l: Listener) =>
 	l.container
 		? `c ${l.container.id}`
 		: l.process
-			? `p ${l.process.name}`
+			? `p ${l.process.name} ${l.process.cwd ?? ""}`
 			: `u ${l.user ?? "?"}`;
 
 const portShared: Rule = (_snap, ls) => {

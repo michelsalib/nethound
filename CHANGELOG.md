@@ -29,9 +29,21 @@ All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow 
   listens on instead), or where its server listens on the container's own `127.0.0.1`, which docker
   never reaches: in both, connections are reset.
 
+- A demo in the README: two worktrees' servers on one port, found by `doctor`, told apart by
+  `who`, and one stopped from `watch`.
+
 ### Changed
 
 - Behind systemd-resolved's `127.0.0.53`, the DNS servers it asks are listed too (`map`, `--json`).
+
+### Fixed
+
+- `doctor` missed `localhost` split between two servers of the same program (two `vite`, in two
+  worktrees): only one directory's processes are one server's workers.
+- `K` in `watch` and `kill --tree` now stop the `npm run dev` behind a server: npm 7 and later
+  rename their process after the command, which nethound didn't take for npm.
+- In a container on WSL's kernel, nethound no longer says Windows reaches its ports: WSL is told by
+  its own files, not by its kernel alone.
 
 ## 0.8.0 (2026-10-18)
 
