@@ -668,6 +668,8 @@ const vpnSplit: Rule = (snap) =>
 const wslVpnDns: Rule = (snap) => {
 	const win = windowsView(snap);
 	if (snap.environment !== "wsl" || !win) return [];
+	// WSL's traffic leaves through Windows (NAT), not by an interface of its own (mirrored)
+	if (!throughWindows(snap, routeTo(snap, INTERNET[4]))) return [];
 	const windowsOwn = new Set(
 		win.interfaces.flatMap((i) => i.addresses.map((a) => a.address)),
 	);

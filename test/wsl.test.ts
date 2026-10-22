@@ -372,6 +372,16 @@ test("in WSL, doctor: the DNS servers of Windows' VPN WSL doesn't ask, and an MT
 	eth0.mtu = 1300;
 	expect(rules({ ...snap, dns: ["192.168.1.1"] })).toEqual([]);
 	expect(rules({ ...snap, dns: ["10.20.0.53", "1.1.1.1"] })).toEqual([]);
+	// WSL's traffic not leaving through Windows (mirrored networking): Windows' VPN is not its way
+	eth0.mtu = 1500;
+	const mirrored = {
+		...snap,
+		routes: snap.routes.map((r) => ({
+			...r,
+			gateway: r.gateway && "192.168.1.254",
+		})),
+	};
+	expect(rules(mirrored)).toEqual([]);
 	// the VPN down: nothing
 	vpn.addresses = [];
 	eth0.mtu = 1500;
