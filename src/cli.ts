@@ -49,6 +49,7 @@ import { killPort } from "./kill.ts";
 import { banner } from "./logo.ts";
 import { maskCmd, type Snapshot } from "./model.ts";
 import { openPort } from "./open.ts";
+import { run } from "./run.ts";
 import {
 	binaryName,
 	compiled,
@@ -66,6 +67,7 @@ import {
 	upgradeCommand,
 } from "./update.ts";
 import { runWatch } from "./watch/terminal.ts";
+import { parseNslookup } from "./wsl.ts";
 
 const TAGLINE =
 	"see what listens on each port, who reaches it, and how everything connects";
@@ -213,8 +215,9 @@ async function main(argv: string[]): Promise<number> {
 	const snap: Snapshot = collect({
 		...(values["no-docker"] && { containers: [] }),
 		windows: command === "doctor",
-		windowsRouting:
-			command === "doctor" || command === "map" || command === "route",
+		windowsRouting: ["doctor", "map", "route", "conns", "who"].includes(
+			command ?? "",
+		),
 		firewall: command === "doctor" || command === "who",
 	});
 	if (!values["show-secrets"])
@@ -299,21 +302,39 @@ async function main(argv: string[]): Promise<number> {
 					"route takes a host name or an address, e.g. nethound route github.com",
 				);
 			let ip = host;
+			// in WSL, a name only Windows' DNS servers know (a VPN's): Windows resolves it
+			let byWindows = false;
 			if (!isIP(host)) {
 				try {
 					ip = (await lookup(host)).address;
 				} catch {
-					console.error(`nethound: cannot resolve ${host}`);
-					return 1;
+					const found =
+						snap.environment === "wsl"
+							? parseNslookup(run("nslookup.exe", [host]))
+							: [];
+					const first = found.find((a) => isIP(a) === 4) ?? found[0];
+					if (!first) {
+						console.error(`nethound: cannot resolve ${host}`);
+						return 1;
+					}
+					ip = first;
+					byWindows = true;
 				}
 			}
 			const r = routeTo(snap, ip);
-			const next =
-				snap.windowsRouting && throughWindows(snap, r, snap.windowsRouting);
+			const next = throughWindows(snap, r);
 			if (next) r.windows = next;
 			print(
-				() => renderRoute(r, host, opts),
-				() => ({ host, ...routeJson(r) }),
+				() =>
+					renderRoute(r, host, opts) +
+					(byWindows
+						? `\n${paint(opts).yellow(`resolved by Windows: WSL can't resolve ${host} (nethound doctor says why)`)}`
+						: ""),
+				() => ({
+					host,
+					...(byWindows && { resolvedBy: "windows" }),
+					...routeJson(r),
+				}),
 			);
 			return r.kind === "unreachable" ? 1 : 0;
 		}

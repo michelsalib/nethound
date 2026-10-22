@@ -3,7 +3,8 @@
 // program on the same port as a WSL server takes localhost from it. netstat, tasklist and netsh
 // answer in half a second, where PowerShell takes several.
 
-import type { Iface, Route, WindowsPort } from "./model.ts";
+import { isIP } from "node:net";
+import type { Snapshot, WindowsPort } from "./model.ts";
 import { plainIP } from "./net.ts";
 import type { Run } from "./run.ts";
 import { kindOf } from "./windows/collect.ts";
@@ -133,6 +134,10 @@ export function parseNetshAddresses(text: string): Map<number, string[]> {
 	return out;
 }
 
+// ipconfig prints in the console's code page (850 in French), read as UTF-8: each accented letter
+// comes out as one replacement character, so names are compared with every non-ASCII letter alike
+const ascii = (s: string) => s.replace(/[^ -~\t]/g, "?");
+
 /** Adapters' descriptions by name, from `ipconfig /all`: each block opens with a line ending in
  * "<name> :" (its first words, the adapter's type, are translated), then a "Description" line. */
 export function parseIpconfigDescriptions(
@@ -143,10 +148,11 @@ export function parseIpconfigDescriptions(
 	let name: string | undefined;
 	for (const line of text.split("\n")) {
 		if (/^\S.*:\s*$/.test(line)) {
-			const head = line.replace(/\s*:\s*$/, "");
+			// before the colon, a no-break space: 0xFF in code page 850, mangled too
+			const head = ascii(line.replace(/[\s\uFFFD]*:\s*$/, ""));
 			// the longest name the header ends with: "vEthernet (WSL)" over "Ethernet"
 			name = names
-				.filter((n) => head === n || head.endsWith(` ${n}`))
+				.filter((n) => head === ascii(n) || head.endsWith(` ${ascii(n)}`))
 				.sort((a, b) => b.length - a.length)[0];
 			continue;
 		}
@@ -156,12 +162,42 @@ export function parseIpconfigDescriptions(
 	return out;
 }
 
+/** DNS servers by interface, from `netsh interface ipv4 show dnsservers` (UTF-8, translated): a
+ * line naming the interface in quotes, «Ethernet» in French, then lines ending with addresses. */
+export function parseNetshDnsServers(text: string): Record<string, string[]> {
+	const out: Record<string, string[]> = {};
+	let name: string | undefined;
+	for (const line of text.split("\n")) {
+		const head = line.match(/^\S.*?[«"“]\s*(.+?)\s*[»"”]\s*$/);
+		if (head?.[1]) {
+			name = head[1];
+			out[name] = [];
+			continue;
+		}
+		const a = line.match(/\s([\d.]+|[\da-f:]*:[\da-f:]+)\s*$/i);
+		if (name && a?.[1] && isIP(a[1])) out[name]?.push(a[1]);
+	}
+	return out;
+}
+
+/** The addresses `nslookup.exe` answers for a name; none when Windows can't resolve it either.
+ * Its first block is the server's, then the name's: "Address:" or "Addresses:" and indented
+ * lines, labels translated. */
+export function parseNslookup(text: string): string[] {
+	const [, ...answer] = text.split(/\n\s*\n/);
+	return answer
+		.join("\n")
+		.split("\n")
+		.flatMap((line) => {
+			const m = line.match(/^(?:\S[^:]*:\s+|\s+)(\S+)\s*$/);
+			return m?.[1] && isIP(m[1]) ? [plainIP(m[1]).address] : [];
+		});
+}
+
 /** Windows' IPv4 interfaces and routes, for where Windows sends what WSL hands it (behind NAT, a
- * VPN Windows runs is invisible from WSL); undefined when WSL can't run Windows' programs. Four
- * commands that answer in a tenth of a second each, where PowerShell takes several. */
-export function readWindowsRouting(
-	run: Run,
-): { interfaces: Iface[]; routes: Route[] } | undefined {
+ * VPN Windows runs is invisible from WSL), and its DNS servers; undefined when WSL can't run
+ * Windows' programs. Five commands that answer in a tenth of a second each, where PowerShell takes several. */
+export function readWindowsRouting(run: Run): Snapshot["windowsRouting"] {
 	const list = parseNetshInterfaces(
 		run("netsh.exe", ["interface", "ipv4", "show", "interfaces"]),
 	);
@@ -173,53 +209,58 @@ export function readWindowsRouting(
 		run("ipconfig.exe", ["/all"]),
 		list.map((i) => i.name),
 	);
-	const interfaces: Iface[] = list.map((i) => {
-		const description = described.get(i.name);
-		const wireless =
-			/wi-?fi|wireless|802\.11/i.test(description ?? "") &&
-			!/direct/i.test(description ?? "");
-		return {
-			name: i.name,
-			index: i.index,
-			kind: /loopback/i.test(i.name)
-				? "loopback"
-				: kindOf(wireless ? "Wireless80211" : "Ethernet", description ?? ""),
-			...(description && { description }),
-			state: i.up ? "up" : "down",
-			mtu: i.mtu,
-			addresses: (addresses.get(i.index) ?? []).map((address) => ({
-				family: 4,
-				address,
-				prefix: 32,
-			})),
-			members: [],
-			rxBytes: 0,
-			txBytes: 0,
-		};
-	});
+	const interfaces: NonNullable<Snapshot["windowsRouting"]>["interfaces"] =
+		list.map((i) => {
+			const description = described.get(i.name);
+			const wireless =
+				/wi-?fi|wireless|802\.11/i.test(description ?? "") &&
+				!/direct/i.test(description ?? "");
+			return {
+				name: i.name,
+				index: i.index,
+				kind: /loopback/i.test(i.name)
+					? "loopback"
+					: kindOf(wireless ? "Wireless80211" : "Ethernet", description ?? ""),
+				...(description && { description }),
+				state: i.up ? "up" : "down",
+				mtu: i.mtu,
+				addresses: (addresses.get(i.index) ?? []).map((address) => ({
+					family: 4,
+					address,
+					prefix: 32,
+				})),
+				members: [],
+				rxBytes: 0,
+				txBytes: 0,
+			};
+		});
 	const byIndex = new Map(list.map((i) => [i.index, i]));
 	const own = new Set([...addresses.values()].flat());
-	const routes: Route[] = parseNetshRoutes(
-		run("netsh.exe", ["interface", "ipv4", "show", "route"]),
-	).flatMap((r) => {
-		const i = byIndex.get(r.index);
-		// as from PowerShell: no multicast, broadcast, or host routes to its own addresses
-		const skip =
-			/^(22[4-9]|23\d)\./.test(r.dest) ||
-			(r.prefix === 32 && (own.has(r.dest) || r.dest.endsWith(".255")));
-		// Windows ranks routes by the route's metric plus its interface's
-		return i?.up && !skip
-			? [
-					{
-						family: 4,
-						dest: r.dest,
-						prefix: r.prefix,
-						...(r.gateway && { gateway: r.gateway }),
-						iface: i.name,
-						metric: r.metric + i.metric,
-					},
-				]
-			: [];
-	});
-	return { interfaces, routes };
+	const routes: NonNullable<Snapshot["windowsRouting"]>["routes"] =
+		parseNetshRoutes(
+			run("netsh.exe", ["interface", "ipv4", "show", "route"]),
+		).flatMap((r) => {
+			const i = byIndex.get(r.index);
+			// as from PowerShell: no multicast, broadcast, or host routes to its own addresses
+			const skip =
+				/^(22[4-9]|23\d)\./.test(r.dest) ||
+				(r.prefix === 32 && (own.has(r.dest) || r.dest.endsWith(".255")));
+			// Windows ranks routes by the route's metric plus its interface's
+			return i?.up && !skip
+				? [
+						{
+							family: 4,
+							dest: r.dest,
+							prefix: r.prefix,
+							...(r.gateway && { gateway: r.gateway }),
+							iface: i.name,
+							metric: r.metric + i.metric,
+						},
+					]
+				: [];
+		});
+	const dns = parseNetshDnsServers(
+		run("netsh.exe", ["interface", "ipv4", "show", "dnsservers"]),
+	);
+	return { interfaces, routes, dns };
 }

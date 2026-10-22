@@ -151,7 +151,8 @@ in WSL, Windows programs on a port WSL serves, which take Windows' localhost;
 ports docker publishes to a container where nothing listens, or only its own
 127.0.0.1.
 Then the routes: no default route, two of them tied, a VPN taking all traffic or
-only some networks (in WSL, Windows' VPN too), DNS servers with no route. What the firewall blocks is a note, with the rule
+only some networks; in WSL, Windows' VPN too, whether WSL asks its DNS servers
+and an MTU bigger than its. DNS servers with no route. What the firewall blocks is a note, with the rule
 that blocks it. Exits 1 when there are errors.`,
 		options: ["json", "no-docker"],
 		examples: ["nethound doctor", "sudo nethound doctor --json"],

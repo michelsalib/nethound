@@ -15,6 +15,12 @@ All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow 
   `277 routes via 10.8.0.1: 172.16.0.0/16, 10.20.0.0/16, … and 271 more`.
 - `doctor` notes a split-tunnel VPN: what it carries, where the internet goes instead, and the DNS
   servers it takes. In WSL, `doctor` and `map` see Windows' VPN too, which WSL's traffic goes through.
+- `doctor` in WSL warns when WSL doesn't ask the DNS servers of Windows' VPN: the company's names
+  resolve on Windows, not in WSL. The fix for systemd-resolved, or WSL's `dnsTunneling`.
+- `doctor` in WSL warns when WSL's MTU is bigger than Windows' VPN's: bigger packets are dropped on
+  the way, and connections stall on big transfers. The fix: `ip link set eth0 mtu …`.
+- `route` in WSL asks Windows (`nslookup.exe`) for a name WSL can't resolve, and says so.
+- `conns` and `map` mark connections that go through a VPN, Windows' too from WSL.
 
 ## 0.9.0 (2026-10-19)
 

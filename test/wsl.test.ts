@@ -1,12 +1,20 @@
 import { expect, test } from "bun:test";
-import { map, routeTo, throughWindows } from "../src/analyze.ts";
+import { connections, map, routeTo, throughWindows } from "../src/analyze.ts";
 import { collect } from "../src/collect.ts";
-import { renderMap, renderRoute, routeJson } from "../src/format.ts";
+import { doctor } from "../src/doctor.ts";
+import {
+	renderConnections,
+	renderMap,
+	renderRoute,
+	routeJson,
+} from "../src/format.ts";
+import type { Snapshot } from "../src/model.ts";
 import {
 	parseIpconfigDescriptions,
 	parseNetshInterfaces,
 	parseNetshRoutes,
 	parseNetstatListeners,
+	parseNslookup,
 	parsePortProxy,
 	parseTasklist,
 	readWindowsPorts,
@@ -153,9 +161,41 @@ Carte Ethernet vEthernet (WSL (Hyper-V firewall)) :
 
    Description. . . . . . . . . . . . . . : Hyper-V Virtual Ethernet Adapter
 
-Carte réseau sans fil Wi-Fi :
+Carte r\uFFFDseau sans fil Wi-Fi\uFFFD:
 
    Description. . . . . . . . . . . . . . : Intel(R) Wi-Fi 6E AX211 160MHz
+
+Carte Ethernet Connexion r\uFFFDseau Bluetooth :
+
+   Description. . . . . . . . . . . . . . : Bluetooth Device (Personal Area Network)
+`;
+
+const NETSH_DNS = `
+Configuration pour l’interface « Ethernet »
+    Serveurs DNS configurés statiquement : 10.20.0.53
+                                          10.20.0.54
+    Enregistrer avec le suffixe :           Principale et spécifique à la connexion
+
+Configuration pour l’interface « Wi-Fi »
+    Serveurs DNS configurés via DHCP :  10.0.0.1
+                                          fe80::1
+    Enregistrer avec le suffixe :           Principale uniquement
+
+Configuration pour l’interface « Connexion réseau Bluetooth »
+`;
+
+// nslookup.exe for a name only the VPN's servers know, and for one nobody knows
+const NSLOOKUP = `Serveur :   dc1.corp.local
+Address:  10.20.0.53
+
+Nom :    intranet.corp.local
+Addresses:  2001:db8::5
+          10.20.3.4
+
+`;
+const NSLOOKUP_NONE = `Serveur :   dc1.corp.local
+Address:  10.20.0.53
+
 `;
 
 const windowsRun = (cmd: string, args: string[]) =>
@@ -164,6 +204,7 @@ const windowsRun = (cmd: string, args: string[]) =>
 		"netsh.exe interface ipv4 show ipaddresses": NETSH_ADDRESSES,
 		"netsh.exe interface ipv4 show route": NETSH_ROUTES,
 		"ipconfig.exe /all": IPCONFIG,
+		"netsh.exe interface ipv4 show dnsservers": NETSH_DNS,
 	})[[cmd, ...args].join(" ")] ?? "";
 
 test("Windows' routing from netsh and ipconfig, whatever their language", () => {
@@ -201,10 +242,17 @@ test("Windows' routing from netsh and ipconfig, whatever their language", () => 
 			"Wi-Fi: wifi up",
 			"Ethernet: tun up",
 			"vEthernet (WSL (Hyper-V firewall)): virtual up",
-			"Connexion réseau Bluetooth: ethernet down",
+			// its accent, mangled by ipconfig's code page, matched all the same
+			"Connexion réseau Bluetooth: virtual down",
 		],
 	);
-	// no description for Bluetooth, so no telling it from ethernet: only VPNs matter here
+	expect(win?.dns).toEqual({
+		Ethernet: ["10.20.0.53", "10.20.0.54"],
+		"Wi-Fi": ["10.0.0.1", "fe80::1"],
+		"Connexion réseau Bluetooth": [],
+	});
+	expect(parseNslookup(NSLOOKUP)).toEqual(["2001:db8::5", "10.20.3.4"]);
+	expect(parseNslookup(NSLOOKUP_NONE)).toEqual([]);
 	// the interface's metric added; none through an interface that is down, no multicast,
 	// broadcast or host route to its own address
 	expect(
@@ -227,7 +275,7 @@ test("in WSL, route follows Windows' table: through its VPN or not", () => {
 	if (!win) throw new Error("no routing");
 	const via = (ip: string) => {
 		const r = routeTo(snap, ip);
-		const next = throughWindows(snap, r, win);
+		const next = throughWindows({ ...snap, windowsRouting: win }, r);
 		if (next) r.windows = next;
 		return r;
 	};
@@ -258,7 +306,10 @@ test("in WSL, route follows Windows' table: through its VPN or not", () => {
 		interfaces: win.interfaces.filter((i) => i.index !== 39),
 	};
 	expect(
-		throughWindows(snap, routeTo(snap, "8.8.8.8"), elsewhere),
+		throughWindows(
+			{ ...snap, windowsRouting: elsewhere },
+			routeTo(snap, "8.8.8.8"),
+		),
 	).toBeUndefined();
 });
 
@@ -280,4 +331,71 @@ test("in WSL, the map says which VPN Windows runs", () => {
 	expect(renderMap(map(snap), { color: false })).toContain(
 		"windows  VPN Ethernet (Fortinet SSL VPN Virtual Ethernet Adapter): 1 network through it, WSL's traffic to them too; the rest by Wi-Fi",
 	);
+});
+
+test("in WSL, doctor: the DNS servers of Windows' VPN WSL doesn't ask, and an MTU bigger than its", () => {
+	const snap: Snapshot = {
+		...fixture(),
+		environment: "wsl",
+		dns: ["127.0.0.53", "1.1.1.1"],
+		windowsRouting: readWindowsRouting(windowsRun),
+	};
+	const eth0 = snap.interfaces.find((i) => i.name === "eth0");
+	const vpn = snap.windowsRouting?.interfaces.find(
+		(i) => i.name === "Ethernet",
+	);
+	if (!eth0 || !vpn) throw new Error("fixture");
+	eth0.mtu = 1500;
+	const rules = (s: Snapshot) =>
+		doctor(s).filter((f) => f.rule.startsWith("wsl-vpn"));
+	const [dns, mtu] = rules(snap);
+	expect(dns).toMatchObject({
+		severity: "warning",
+		title:
+			"WSL doesn't ask the DNS servers of Windows' VPN on Ethernet (Fortinet SSL VPN Virtual Ethernet Adapter)",
+		details: [
+			"Windows asks 10.20.0.53, 10.20.0.54: the names only they know (the company's) resolve on Windows",
+			"WSL asks 1.1.1.1 (behind systemd-resolved's 127.0.0.53), which don't know them: those names fail here",
+			"WSL reaches 10.20.0.53, 10.20.0.54 all the same: through Windows, into the VPN",
+		],
+	});
+	expect(dns?.fix).toStartWith(
+		"give systemd-resolved the VPN's servers first: DNS=10.20.0.53 10.20.0.54 1.1.1.1 under [Resolve]",
+	);
+	expect(mtu).toMatchObject({
+		title:
+			"eth0's MTU, 1500, is more than the 1300 of Windows' VPN on Ethernet (Fortinet SSL VPN Virtual Ethernet Adapter)",
+		fix: "sudo ip link set eth0 mtu 1300, until WSL restarts; for good: command = ip link set eth0 mtu 1300 under [boot] in /etc/wsl.conf",
+	});
+	// WSL asking Windows (its NAT DNS proxy, here 192.168.1.1), or the VPN's servers: fine; an MTU
+	// no bigger than the tunnel's: fine
+	eth0.mtu = 1300;
+	expect(rules({ ...snap, dns: ["192.168.1.1"] })).toEqual([]);
+	expect(rules({ ...snap, dns: ["10.20.0.53", "1.1.1.1"] })).toEqual([]);
+	// the VPN down: nothing
+	vpn.addresses = [];
+	eth0.mtu = 1500;
+	expect(rules({ ...snap })).toEqual([]);
+});
+
+test("conns and map mark what goes through Windows' VPN", () => {
+	const snap: Snapshot = {
+		...fixture(),
+		environment: "wsl",
+		windowsRouting: readWindowsRouting(windowsRun),
+	};
+	snap.sockets.push({
+		proto: "tcp",
+		family: 4,
+		local: { address: "192.168.1.10", port: 50000 },
+		remote: { address: "10.20.3.4", port: 27017 },
+		state: "ESTABLISHED",
+		pid: 300,
+		uid: 1000,
+	});
+	const o = { color: false };
+	expect(renderConnections(connections(snap), o)).toContain(
+		"→ 10.20.3.4:27017  via eth0 → 192.168.1.1 → Windows' VPN on Ethernet",
+	);
+	expect(renderMap(map(snap), o)).toContain("10.20.3.4:27017 (VPN)");
 });

@@ -173,21 +173,31 @@ export function routeTo(snap: Snapshot, ip: string): RouteResult {
 	};
 }
 
+/** In WSL behind NAT, Windows' routing as a snapshot of its own: its VPN decides where WSL's
+ * traffic goes. Its name servers are every interface's. */
+export const windowsView = (snap: Snapshot): Snapshot | undefined =>
+	snap.windowsRouting && {
+		...snap,
+		environment: "windows",
+		interfaces: snap.windowsRouting.interfaces,
+		routes: snap.windowsRouting.routes,
+		dns: [...new Set(Object.values(snap.windowsRouting.dns ?? {}).flat())],
+		containers: [],
+	};
+
 /** In WSL behind NAT, a route through Windows' address on the virtual switch: where Windows then
  * sends it, through its VPN or not. Undefined when the gateway is not Windows (mirrored
  * networking, where WSL sees Windows' interfaces itself). */
 export function throughWindows(
 	snap: Snapshot,
 	r: RouteResult,
-	windows: Pick<Snapshot, "interfaces" | "routes">,
 ): RouteResult | undefined {
-	if (r.kind !== "gateway" || r.family !== 4) return undefined;
+	const win = windowsView(snap);
+	if (!win || r.kind !== "gateway" || r.family !== 4) return undefined;
 	const at = r.gateway;
-	if (
-		!windows.interfaces.some((i) => i.addresses.some((a) => a.address === at))
-	)
+	if (!win.interfaces.some((i) => i.addresses.some((a) => a.address === at)))
 		return undefined;
-	return routeTo({ ...snap, ...windows, containers: [] }, r.dest);
+	return routeTo(win, r.dest);
 }
 
 function reachOf(
@@ -425,7 +435,9 @@ function peerOf(snap: Snapshot, all: Listener[], s: Socket): Peer {
 			container: c.container,
 			network: c.network.name,
 		};
-	return { kind: "remote", route: routeTo(snap, r) };
+	const route = routeTo(snap, r);
+	const next = throughWindows(snap, route);
+	return { kind: "remote", route: next ? { ...route, windows: next } : route };
 }
 
 export interface WhoReport {
@@ -552,21 +564,17 @@ export function map(snap: Snapshot): MapReport {
 		dns: snap.dns.map((server) => ({ server, route: routeTo(snap, server) })),
 		inside: insideListeners(snap),
 		hidden: snap.hidden,
-		...(snap.windowsRouting && {
-			windowsVpns: windowsVpns(snap, snap.windowsRouting),
-		}),
+		...(snap.windowsRouting && { windowsVpns: windowsVpns(snap) }),
 	};
 }
 
-function windowsVpns(
-	snap: Snapshot,
-	windows: NonNullable<Snapshot["windowsRouting"]>,
-): NonNullable<MapReport["windowsVpns"]> {
-	const view = { ...snap, ...windows, containers: [] };
-	const internet = routeTo(view, "1.1.1.1").iface;
-	return upVpns(windows).map((i) => ({
+function windowsVpns(snap: Snapshot): NonNullable<MapReport["windowsVpns"]> {
+	const win = windowsView(snap);
+	if (!win) return [];
+	const internet = routeTo(win, "1.1.1.1").iface;
+	return upVpns(win).map((i) => ({
 		vpn: vpnLabel(i),
-		networks: windows.routes.filter((r) => r.iface === i.name && r.prefix > 0)
+		networks: win.routes.filter((r) => r.iface === i.name && r.prefix > 0)
 			.length,
 		all: internet === i.name,
 		...(internet && { internet }),

@@ -195,9 +195,13 @@ export function peerLabel(p: Peer, remote: string, o?: RenderOptions): string {
 const routeVia = (r: RouteResult) =>
 	r.kind === "unreachable"
 		? "no route"
-		: r.gateway
-			? `via ${r.iface} → ${r.gateway}`
-			: `via ${r.iface}`;
+		: `via ${r.iface}${r.gateway ? ` → ${r.gateway}` : ""}${
+				r.vpn
+					? " (VPN)"
+					: r.windows?.vpn
+						? ` → Windows' VPN on ${r.windows.iface}`
+						: ""
+			}`;
 
 export function renderList(ls: Listener[], o: RenderOptions): string {
 	const c = paint(o);
@@ -728,10 +732,14 @@ function grouped(
 	const by = new Map<string, Map<string, number>>();
 	for (const x of conns) {
 		const who = connOwner(x);
+		// through a VPN: this machine's, or in WSL Windows'
+		const vpn =
+			x.peer.kind === "remote" &&
+			(x.peer.route.vpn || x.peer.route.windows?.vpn);
 		const to =
 			label === "local"
 				? peerLabel(x.peer, `:${x.remote.port}`, o)
-				: endpoint(x.remote);
+				: `${endpoint(x.remote)}${vpn ? c.cyan(" (VPN)") : ""}`;
 		const m = by.get(who) ?? new Map<string, number>();
 		m.set(to, (m.get(to) ?? 0) + 1);
 		by.set(who, m);

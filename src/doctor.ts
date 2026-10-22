@@ -10,10 +10,12 @@ import {
 	publishedTarget,
 	type RouteResult,
 	routeTo,
+	throughWindows,
 	upVpns,
 	VPN_KINDS,
 	vpnLabel,
 	widest,
+	windowsView,
 } from "./analyze.ts";
 import { INTERNAL, outside, verdictFor } from "./firewall.ts";
 import type { Family, Route, Snapshot, Socket } from "./model.ts";
@@ -572,17 +574,6 @@ const defaultRoutes: Rule = (snap) => {
 	});
 };
 
-/** In WSL behind NAT, Windows' routing as a snapshot of its own: its VPN decides where WSL's
- * traffic goes. */
-const windowsView = (snap: Snapshot): Snapshot | undefined =>
-	snap.windowsRouting && {
-		...snap,
-		...snap.windowsRouting,
-		environment: "windows",
-		containers: [],
-		dns: [],
-	};
-
 /** Both views a VPN rule looks at: this machine's, and in WSL Windows'. */
 const vpnViews = (snap: Snapshot): [Snapshot, string][] => {
 	const win = windowsView(snap);
@@ -672,6 +663,90 @@ const vpnSplit: Rule = (snap) =>
 		});
 	});
 
+/** In WSL, a VPN Windows runs whose DNS servers WSL doesn't ask: the company's names resolve on
+ * Windows, not in WSL, though its traffic would go through the VPN. */
+const wslVpnDns: Rule = (snap) => {
+	const win = windowsView(snap);
+	if (snap.environment !== "wsl" || !win) return [];
+	const windowsOwn = new Set(
+		win.interfaces.flatMap((i) => i.addresses.map((a) => a.address)),
+	);
+	// WSL's own resolver that asks Windows: its NAT DNS proxy, or dnsTunneling's 10.255.255.254
+	const asksWindows = snap.dns.some(
+		(d) =>
+			windowsOwn.has(d) ||
+			snap.interfaces.some(
+				(i) =>
+					i.kind === "loopback" &&
+					!isLoopback(d) &&
+					i.addresses.some((a) => a.address === d),
+			),
+	);
+	if (asksWindows) return [];
+	const upstream = snap.dns.filter((d) => !isLoopback(d));
+	return upVpns(win).flatMap((vpn): Finding[] => {
+		const servers = snap.windowsRouting?.dns?.[vpn.name] ?? [];
+		if (!servers.length || servers.some((d) => snap.dns.includes(d))) return [];
+		const reached = servers.filter(
+			(d) => throughWindows(snap, routeTo(snap, d))?.vpn,
+		);
+		const resolved = snap.dns.includes("127.0.0.53");
+		const list = servers.join(" ");
+		return [
+			{
+				rule: "wsl-vpn-dns",
+				severity: "warning",
+				title: `WSL doesn't ask the DNS servers of Windows' VPN on ${vpnLabel(vpn)}`,
+				details: [
+					`Windows asks ${servers.join(", ")}: the names only they know (the company's) resolve on Windows`,
+					upstream.length
+						? `WSL asks ${upstream.join(", ")}${resolved ? " (behind systemd-resolved's 127.0.0.53)" : ""}, which don't know them: those names fail here`
+						: "WSL asks none of them: those names fail here",
+					...(reached.length
+						? [
+								`WSL reaches ${reached.join(", ")} all the same: through Windows, into the VPN`,
+							]
+						: []),
+				],
+				fix: `${
+					resolved
+						? `give systemd-resolved the VPN's servers first: DNS=${list} ${upstream.join(" ")} under [Resolve] in /etc/systemd/resolved.conf, then sudo systemctl restart systemd-resolved`
+						: `put nameserver ${servers[0]} first in /etc/resolv.conf`
+				}; or let WSL ask Windows: dnsTunneling=true under [wsl2] in %UserProfile%\\.wslconfig, generateResolvConf = true under [network] in /etc/wsl.conf, then wsl --shutdown`,
+			},
+		];
+	});
+};
+
+/** In WSL, an MTU bigger than Windows' VPN's: what WSL sends bigger than the tunnel takes is
+ * dropped on the way, often without the ICMP that would make it send smaller packets. */
+const wslVpnMtu: Rule = (snap) => {
+	const win = windowsView(snap);
+	if (snap.environment !== "wsl" || !win) return [];
+	return upVpns(win).flatMap((vpn): Finding[] => {
+		const carried = win.routes.find(
+			(r) => r.iface === vpn.name && r.prefix > 0 && r.prefix < 32,
+		);
+		if (!vpn.mtu || !carried) return [];
+		const r = routeTo(snap, carried.dest);
+		const out = snap.interfaces.find((i) => i.name === r.iface);
+		if (!out?.mtu || out.mtu <= vpn.mtu || !throughWindows(snap, r)?.vpn)
+			return [];
+		return [
+			{
+				rule: "wsl-vpn-mtu",
+				severity: "warning",
+				title: `${out.name}'s MTU, ${out.mtu}, is more than the ${vpn.mtu} of Windows' VPN on ${vpnLabel(vpn)}`,
+				details: [
+					`packets WSL sends to the VPN's networks bigger than ${vpn.mtu} bytes are dropped on the way, often without the ICMP that would tell WSL to send smaller ones`,
+					"the sign: connections that open, then stall on a big transfer (git clone, ssh, docker pull, a TLS handshake)",
+				],
+				fix: `sudo ip link set ${out.name} mtu ${vpn.mtu}, until WSL restarts; for good: command = ip link set ${out.name} mtu ${vpn.mtu} under [boot] in /etc/wsl.conf`,
+			},
+		];
+	});
+};
+
 const PRIVATE: [string, number][] = [
 	["10.0.0.0", 8],
 	["172.16.0.0", 12],
@@ -755,6 +830,8 @@ export const RULES: Rule[] = [
 	defaultRoutes,
 	vpnAllTraffic,
 	vpnSplit,
+	wslVpnDns,
+	wslVpnMtu,
 	dnsServers,
 ];
 
