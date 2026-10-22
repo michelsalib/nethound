@@ -11,6 +11,7 @@ import {
 	listeners,
 	map,
 	routeTo,
+	throughWindows,
 	unowned,
 	who,
 } from "./analyze.ts";
@@ -212,6 +213,8 @@ async function main(argv: string[]): Promise<number> {
 	const snap: Snapshot = collect({
 		...(values["no-docker"] && { containers: [] }),
 		windows: command === "doctor",
+		windowsRouting:
+			command === "doctor" || command === "map" || command === "route",
 		firewall: command === "doctor" || command === "who",
 	});
 	if (!values["show-secrets"])
@@ -305,6 +308,9 @@ async function main(argv: string[]): Promise<number> {
 				}
 			}
 			const r = routeTo(snap, ip);
+			const next =
+				snap.windowsRouting && throughWindows(snap, r, snap.windowsRouting);
+			if (next) r.windows = next;
 			print(
 				() => renderRoute(r, host, opts),
 				() => ({ host, ...routeJson(r) }),

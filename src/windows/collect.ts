@@ -131,7 +131,7 @@ const TCP_STATES: Record<string, SocketState> = {
 	DeleteTCB: "CLOSE",
 };
 
-function kindOf(type: string, description: string): IfaceKind {
+export function kindOf(type: string, description: string): IfaceKind {
 	if (type === "Loopback") return "loopback";
 	if (/wireguard/i.test(description)) return "wireguard";
 	if (
@@ -170,6 +170,7 @@ export function parseWindows(
 			name: n.name,
 			index: n.index,
 			kind: kindOf(n.type, n.description),
+			...(n.description && { description: n.description }),
 			state:
 				n.status === "Up" ? "up" : n.status === "Down" ? "down" : "unknown",
 			mtu: n.mtu > 0 ? n.mtu : 0,

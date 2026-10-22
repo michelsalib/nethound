@@ -2,6 +2,20 @@
 
 All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow [semantic versioning](https://semver.org).
 
+## Unreleased
+
+### Added
+
+- `route` says whether traffic goes through a VPN that is up, or around it (split tunnelling).
+- `route` in WSL follows the traffic into Windows: where Windows sends it next, through Windows' VPN
+  or not, from `netsh.exe` and `ipconfig.exe` in half a second. Behind WSL's NAT, a VPN Windows runs
+  is otherwise invisible.
+- `interfaces` marks VPNs, with their adapter's description on Windows (`VPN: Fortinet SSL VPN…`).
+- `interfaces` and `map` cut a VPN's hundreds of routes to the widest, its gateway said once:
+  `277 routes via 10.8.0.1: 172.16.0.0/16, 10.20.0.0/16, … and 271 more`.
+- `doctor` notes a split-tunnel VPN: what it carries, where the internet goes instead, and the DNS
+  servers it takes. In WSL, `doctor` and `map` see Windows' VPN too, which WSL's traffic goes through.
+
 ## 0.9.0 (2026-10-19)
 
 ### Added

@@ -4,6 +4,7 @@ import {
 	listenerJson,
 	mapJson,
 	renderConnections,
+	renderInterfaces,
 	renderList,
 	renderMap,
 	renderRoute,
@@ -107,4 +108,34 @@ test("JSON has no cycles between listeners and their clients", () => {
 		kind: "local",
 		process: { name: "curl" },
 	});
+});
+
+test("interfaces: a VPN's hundreds of routes cut to the widest, its gateway said once", () => {
+	const s = structuredClone(snap);
+	s.interfaces.push({
+		name: "tun0",
+		index: 9,
+		kind: "tun",
+		state: "up",
+		mtu: 1400,
+		addresses: [{ family: 4, address: "10.8.0.2", prefix: 32 }],
+		members: [],
+		rxBytes: 0,
+		txBytes: 0,
+	});
+	for (let n = 0; n < 200; n++)
+		s.routes.push({
+			family: 4,
+			dest: `10.${n}.0.0`,
+			prefix: n === 150 ? 8 : 24,
+			gateway: "10.8.0.1",
+			iface: "tun0",
+			metric: 0,
+		});
+	const m = map(s);
+	const out = renderInterfaces(m.interfaces, m.idle, o);
+	expect(out).toContain("tun0  tun  up  10.8.0.2/32  VPN");
+	expect(out).toContain(
+		"routes     200 routes via 10.8.0.1: 10.150.0.0/8, 10.0.0.0/24, 10.1.0.0/24, 10.2.0.0/24, 10.3.0.0/24, 10.4.0.0/24 and 194 more",
+	);
 });

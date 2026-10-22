@@ -14,7 +14,7 @@ import type { Address, Container, Snapshot } from "./model.ts";
 import { annotate } from "./origin.ts";
 import { type Run, run as system } from "./run.ts";
 import { collectWindows } from "./windows/collect.ts";
-import { readWindowsPorts } from "./wsl.ts";
+import { readWindowsPorts, readWindowsRouting } from "./wsl.ts";
 
 export interface CollectOptions {
 	/** Default: the one nethound runs on. */
@@ -31,6 +31,8 @@ export interface CollectOptions {
 	hostname?: string;
 	/** In WSL: also the ports Windows listens on (nethound doctor), through `run`. */
 	windows?: boolean;
+	/** In WSL: also Windows' routes (nethound doctor, map, route), through `run`. */
+	windowsRouting?: boolean;
 	/** Also what the firewall lets in (nethound doctor and who). */
 	firewall?: boolean;
 }
@@ -84,10 +86,15 @@ export function collect(o: CollectOptions = {}): Snapshot {
 		o.windows && machine.environment === "wsl"
 			? readWindowsPorts(run)
 			: undefined;
+	const windowsRouting =
+		o.windowsRouting && machine.environment === "wsl"
+			? readWindowsRouting(run)
+			: undefined;
 	return {
 		hostname: o.hostname ?? hostname(),
 		...machine,
 		...(windowsPorts && { windowsPorts }),
+		...(windowsRouting && { windowsRouting }),
 		containers,
 		uid,
 	};

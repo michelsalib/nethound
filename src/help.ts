@@ -94,7 +94,9 @@ containers on it, and the traffic so far.`,
 		summary: "which interface and gateway traffic to HOST takes",
 		about: `Resolves HOST (a name or an address) and shows where packets to it go, as the
 kernel's main routing table decides: this machine, a container, a network one of
-the interfaces is on, or a gateway; with the route and the source address.`,
+the interfaces is on, or a gateway; with the route and the source address, and
+whether it goes through a VPN that is up. In WSL, where Windows sends it next
+from Windows' own routing table: through Windows' VPN or not.`,
 		options: ["json", "no-docker"],
 		examples: ["nethound route github.com", "nethound route 172.18.0.2"],
 	},
@@ -148,8 +150,8 @@ which one localhost reaches over IPv4 and over IPv6; servers that take IPv6 only
 in WSL, Windows programs on a port WSL serves, which take Windows' localhost;
 ports docker publishes to a container where nothing listens, or only its own
 127.0.0.1.
-Then the routes: no default route, two of them tied, a VPN taking all traffic,
-DNS servers with no route. What the firewall blocks is a note, with the rule
+Then the routes: no default route, two of them tied, a VPN taking all traffic or
+only some networks (in WSL, Windows' VPN too), DNS servers with no route. What the firewall blocks is a note, with the rule
 that blocks it. Exits 1 when there are errors.`,
 		options: ["json", "no-docker"],
 		examples: ["nethound doctor", "sudo nethound doctor --json"],

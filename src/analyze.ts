@@ -87,7 +87,35 @@ export interface RouteResult {
 	/** The address packets leave with. */
 	source?: string;
 	container?: Container;
+	/** It leaves through a VPN: the interface, with its adapter's description when known. */
+	vpn?: string;
+	/** VPNs that are up but that it does not go through: split tunnelling leaves it outside. */
+	outside?: string[];
+	/** In WSL behind NAT: where Windows sends it next, from Windows' own routing table. */
+	windows?: RouteResult;
 }
+
+export const VPN_KINDS: Iface["kind"][] = ["tun", "wireguard"];
+
+/** The VPNs that are up, with an address: not macOS' own utun0-3, which have fe80:: only. */
+export const upVpns = (snap: Pick<Snapshot, "interfaces">) =>
+	snap.interfaces.filter(
+		(i) =>
+			VPN_KINDS.includes(i.kind) &&
+			i.state !== "down" &&
+			i.addresses.some((a) => !isLinkLocal(a.address)),
+	);
+
+/** A long route list cut short: the default and the widest networks first, and how many more.
+ * A split-tunnel VPN pushes hundreds. */
+export function widest(rs: Route[], max = 6): { shown: Route[]; more: number } {
+	if (rs.length <= max) return { shown: rs, more: 0 };
+	const shown = [...rs].sort((a, b) => a.prefix - b.prefix).slice(0, max);
+	return { shown, more: rs.length - max };
+}
+
+export const vpnLabel = (i: Iface) =>
+	i.description ? `${i.name} (${i.description})` : i.name;
 
 export const userName = (snap: Snapshot, uid: number | undefined) =>
 	uid === undefined ? undefined : (snap.users[uid] ?? String(uid));
@@ -129,6 +157,9 @@ export function routeTo(snap: Snapshot, ip: string): RouteResult {
 		addrs.find((a) => !isLinkLocal(a.address))?.address ??
 		addrs[0]?.address;
 	const c = containerAt(snap, ip);
+	const outside = upVpns(snap)
+		.filter((i) => i.name !== best.iface)
+		.map(vpnLabel);
 	return {
 		...base,
 		kind: c ? "container" : best.gateway ? "gateway" : "network",
@@ -137,7 +168,26 @@ export function routeTo(snap: Snapshot, ip: string): RouteResult {
 		route: best,
 		source,
 		container: c?.container,
+		...(iface && VPN_KINDS.includes(iface.kind) && { vpn: vpnLabel(iface) }),
+		...(outside.length && { outside }),
 	};
+}
+
+/** In WSL behind NAT, a route through Windows' address on the virtual switch: where Windows then
+ * sends it, through its VPN or not. Undefined when the gateway is not Windows (mirrored
+ * networking, where WSL sees Windows' interfaces itself). */
+export function throughWindows(
+	snap: Snapshot,
+	r: RouteResult,
+	windows: Pick<Snapshot, "interfaces" | "routes">,
+): RouteResult | undefined {
+	if (r.kind !== "gateway" || r.family !== 4) return undefined;
+	const at = r.gateway;
+	if (
+		!windows.interfaces.some((i) => i.addresses.some((a) => a.address === at))
+	)
+		return undefined;
+	return routeTo({ ...snap, ...windows, containers: [] }, r.dest);
 }
 
 function reachOf(
@@ -438,6 +488,15 @@ export interface MapReport {
 	/** What listens inside containers and other namespaces. */
 	inside: InsideListener[];
 	hidden: number;
+	/** In WSL behind NAT: the VPNs Windows runs, which WSL's traffic goes through too. */
+	windowsVpns?: {
+		vpn: string;
+		/** The networks it carries; all of them when it takes the default route. */
+		networks: number;
+		all: boolean;
+		/** The interface the internet goes by. */
+		internet?: string;
+	}[];
 }
 
 export function map(snap: Snapshot): MapReport {
@@ -493,7 +552,25 @@ export function map(snap: Snapshot): MapReport {
 		dns: snap.dns.map((server) => ({ server, route: routeTo(snap, server) })),
 		inside: insideListeners(snap),
 		hidden: snap.hidden,
+		...(snap.windowsRouting && {
+			windowsVpns: windowsVpns(snap, snap.windowsRouting),
+		}),
 	};
+}
+
+function windowsVpns(
+	snap: Snapshot,
+	windows: NonNullable<Snapshot["windowsRouting"]>,
+): NonNullable<MapReport["windowsVpns"]> {
+	const view = { ...snap, ...windows, containers: [] };
+	const internet = routeTo(view, "1.1.1.1").iface;
+	return upVpns(windows).map((i) => ({
+		vpn: vpnLabel(i),
+		networks: windows.routes.filter((r) => r.iface === i.name && r.prefix > 0)
+			.length,
+		all: internet === i.name,
+		...(internet && { internet }),
+	}));
 }
 
 /** A port that listens inside another network namespace: a container's own, which the host's

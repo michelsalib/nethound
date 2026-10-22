@@ -10,10 +10,14 @@ import {
 	publishedTarget,
 	type RouteResult,
 	routeTo,
+	upVpns,
+	VPN_KINDS,
+	vpnLabel,
+	widest,
 } from "./analyze.ts";
 import { INTERNAL, outside, verdictFor } from "./firewall.ts";
-import type { Family, Iface, Route, Snapshot, Socket } from "./model.ts";
-import { inNetwork, isLoopback, isWildcard } from "./net.ts";
+import type { Family, Route, Snapshot, Socket } from "./model.ts";
+import { inNetwork, isLinkLocal, isLoopback, isWildcard } from "./net.ts";
 
 export type Severity = "error" | "warning" | "info";
 
@@ -493,8 +497,6 @@ const INTERNET: Record<Family, string> = {
 };
 const FAMILIES: Family[] = [4, 6];
 
-const VPN: Iface["kind"][] = ["tun", "wireguard"];
-
 const kindOf = (snap: Snapshot, name?: string) =>
 	snap.interfaces.find((i) => i.name === name)?.kind;
 
@@ -570,37 +572,105 @@ const defaultRoutes: Rule = (snap) => {
 	});
 };
 
-const vpnAllTraffic: Rule = (snap) => {
-	const through = FAMILIES.map((f) => routeTo(snap, INTERNET[f])).filter(
-		(r): r is RouteResult & { route: Route } =>
-			!!r.route && VPN.includes(kindOf(snap, r.iface) ?? "loopback"),
-	);
-	if (!through.length) return [];
-	const vpns = unique(through.map((r) => r.route.iface));
-	// what stays off it: the local network, not docker's bridges
-	const off = snap.routes.filter((r) => {
-		const k = kindOf(snap, r.iface);
-		return (
-			r.prefix > 0 &&
-			k !== undefined &&
-			!INTERNAL.includes(k) &&
-			!VPN.includes(k) &&
-			!isLinkLocalNet(r)
-		);
-	});
+/** In WSL behind NAT, Windows' routing as a snapshot of its own: its VPN decides where WSL's
+ * traffic goes. */
+const windowsView = (snap: Snapshot): Snapshot | undefined =>
+	snap.windowsRouting && {
+		...snap,
+		...snap.windowsRouting,
+		environment: "windows",
+		containers: [],
+		dns: [],
+	};
+
+/** Both views a VPN rule looks at: this machine's, and in WSL Windows'. */
+const vpnViews = (snap: Snapshot): [Snapshot, string][] => {
+	const win = windowsView(snap);
 	return [
-		{
-			rule: "vpn-all-traffic",
-			severity: "info",
-			title: `all internet traffic goes through the VPN on ${vpns.join(", ")}`,
-			details: [
-				...through.map((r) => `IPv${r.family}: ${routeText(r.route)}`),
-				...(off.length ? [`stays off it: ${networks(off)}`] : []),
-			],
-			fix: "nothing to do when that is the point. When only some networks should use it (the company's), that is split tunnelling: a setting of the VPN, or of its administrator",
-		},
+		[snap, ""],
+		...(win ? [[win, "Windows: "] as [Snapshot, string]] : []),
 	];
 };
+
+const vpnAllTraffic: Rule = (snap) =>
+	vpnViews(snap).flatMap(([view, where]) => {
+		const through = FAMILIES.map((f) => routeTo(view, INTERNET[f])).filter(
+			(r): r is RouteResult & { route: Route } =>
+				!!r.route && VPN_KINDS.includes(kindOf(view, r.iface) ?? "loopback"),
+		);
+		if (!through.length) return [];
+		const vpns = unique(through.map((r) => r.route.iface));
+		// what stays off it: the local network, not docker's bridges
+		const off = view.routes.filter((r) => {
+			const k = kindOf(view, r.iface);
+			return (
+				r.prefix > 0 &&
+				k !== undefined &&
+				!INTERNAL.includes(k) &&
+				!VPN_KINDS.includes(k) &&
+				!isLinkLocalNet(r)
+			);
+		});
+		return [
+			{
+				rule: "vpn-all-traffic",
+				severity: "info",
+				title: `${where}all internet traffic goes through the VPN on ${vpns.join(", ")}`,
+				details: [
+					...through.map((r) => `IPv${r.family}: ${routeText(r.route)}`),
+					...(off.length ? [`stays off it: ${networks(off)}`] : []),
+				],
+				fix: "nothing to do when that is the point. When only some networks should use it (the company's), that is split tunnelling: a setting of the VPN, or of its administrator",
+			},
+		];
+	});
+
+/** A VPN that carries some networks only, the internet going around it: worth knowing which. */
+const vpnSplit: Rule = (snap) =>
+	vpnViews(snap).flatMap(([view, where]): Finding[] => {
+		const internet = routeTo(view, INTERNET[4]);
+		return upVpns(view).flatMap((vpn): Finding[] => {
+			// all traffic through it is vpn-all-traffic's
+			if (FAMILIES.some((f) => routeTo(view, INTERNET[f]).iface === vpn.name))
+				return [];
+			const own = new Set(vpn.addresses.map((a) => a.address));
+			const carried = view.routes.filter(
+				(r) =>
+					r.iface === vpn.name &&
+					r.prefix > 0 &&
+					!isLinkLocalNet(r) &&
+					!own.has(r.dest),
+			);
+			if (!carried.length) return [];
+			const { shown, more } = widest(carried);
+			// a link-local server is on whichever link it is, not beyond the VPN
+			const dns = view.dns.filter(
+				(d) => !isLinkLocal(d) && routeTo(view, d).iface === vpn.name,
+			);
+			return [
+				{
+					rule: "vpn-split",
+					severity: "info",
+					title: `${where}the VPN on ${vpnLabel(vpn)} carries ${carried.length} network${carried.length > 1 ? "s" : ""}, the rest goes around it`,
+					details: [
+						`through it: ${shown.map(net).join(", ")}${more ? ` and ${more} more` : ""}`,
+						...(internet.route
+							? [`the internet: ${routeText(internet.route)}`]
+							: []),
+						...(dns.length
+							? [
+									`DNS servers through it: ${dns.join(", ")}: lookups to them fail while it is down`,
+								]
+							: []),
+						...(where
+							? ["WSL's traffic leaves through Windows, and takes the same way"]
+							: []),
+					],
+					fix: "nothing to do when that is the point. To know which way a host goes: nethound route HOST. One that should go through it and doesn't: its network is missing from the VPN's, a setting of its administrator",
+				},
+			];
+		});
+	});
 
 const PRIVATE: [string, number][] = [
 	["10.0.0.0", 8],
@@ -684,6 +754,7 @@ export const RULES: Rule[] = [
 	noDefaultRoute,
 	defaultRoutes,
 	vpnAllTraffic,
+	vpnSplit,
 	dnsServers,
 ];
 
