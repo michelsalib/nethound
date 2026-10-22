@@ -10,10 +10,16 @@ import {
 	publishedTarget,
 	type RouteResult,
 	routeTo,
+	throughWindows,
+	upVpns,
+	VPN_KINDS,
+	vpnLabel,
+	widest,
+	windowsView,
 } from "./analyze.ts";
 import { INTERNAL, outside, verdictFor } from "./firewall.ts";
-import type { Family, Iface, Route, Snapshot, Socket } from "./model.ts";
-import { inNetwork, isLoopback, isWildcard } from "./net.ts";
+import type { Family, Route, Snapshot, Socket } from "./model.ts";
+import { inNetwork, isLinkLocal, isLoopback, isWildcard } from "./net.ts";
 
 export type Severity = "error" | "warning" | "info";
 
@@ -493,8 +499,6 @@ const INTERNET: Record<Family, string> = {
 };
 const FAMILIES: Family[] = [4, 6];
 
-const VPN: Iface["kind"][] = ["tun", "wireguard"];
-
 const kindOf = (snap: Snapshot, name?: string) =>
 	snap.interfaces.find((i) => i.name === name)?.kind;
 
@@ -570,36 +574,179 @@ const defaultRoutes: Rule = (snap) => {
 	});
 };
 
-const vpnAllTraffic: Rule = (snap) => {
-	const through = FAMILIES.map((f) => routeTo(snap, INTERNET[f])).filter(
-		(r): r is RouteResult & { route: Route } =>
-			!!r.route && VPN.includes(kindOf(snap, r.iface) ?? "loopback"),
-	);
-	if (!through.length) return [];
-	const vpns = unique(through.map((r) => r.route.iface));
-	// what stays off it: the local network, not docker's bridges
-	const off = snap.routes.filter((r) => {
-		const k = kindOf(snap, r.iface);
-		return (
-			r.prefix > 0 &&
-			k !== undefined &&
-			!INTERNAL.includes(k) &&
-			!VPN.includes(k) &&
-			!isLinkLocalNet(r)
-		);
-	});
+/** Both views a VPN rule looks at: this machine's, and in WSL Windows'. */
+const vpnViews = (snap: Snapshot): [Snapshot, string][] => {
+	const win = windowsView(snap);
 	return [
-		{
-			rule: "vpn-all-traffic",
-			severity: "info",
-			title: `all internet traffic goes through the VPN on ${vpns.join(", ")}`,
-			details: [
-				...through.map((r) => `IPv${r.family}: ${routeText(r.route)}`),
-				...(off.length ? [`stays off it: ${networks(off)}`] : []),
-			],
-			fix: "nothing to do when that is the point. When only some networks should use it (the company's), that is split tunnelling: a setting of the VPN, or of its administrator",
-		},
+		[snap, ""],
+		...(win ? [[win, "Windows: "] as [Snapshot, string]] : []),
 	];
+};
+
+const vpnAllTraffic: Rule = (snap) =>
+	vpnViews(snap).flatMap(([view, where]) => {
+		const through = FAMILIES.map((f) => routeTo(view, INTERNET[f])).filter(
+			(r): r is RouteResult & { route: Route } =>
+				!!r.route && VPN_KINDS.includes(kindOf(view, r.iface) ?? "loopback"),
+		);
+		if (!through.length) return [];
+		const vpns = unique(through.map((r) => r.route.iface));
+		// what stays off it: the local network, not docker's bridges
+		const off = view.routes.filter((r) => {
+			const k = kindOf(view, r.iface);
+			return (
+				r.prefix > 0 &&
+				k !== undefined &&
+				!INTERNAL.includes(k) &&
+				!VPN_KINDS.includes(k) &&
+				!isLinkLocalNet(r)
+			);
+		});
+		return [
+			{
+				rule: "vpn-all-traffic",
+				severity: "info",
+				title: `${where}all internet traffic goes through the VPN on ${vpns.join(", ")}`,
+				details: [
+					...through.map((r) => `IPv${r.family}: ${routeText(r.route)}`),
+					...(off.length ? [`stays off it: ${networks(off)}`] : []),
+				],
+				fix: "nothing to do when that is the point. When only some networks should use it (the company's), that is split tunnelling: a setting of the VPN, or of its administrator",
+			},
+		];
+	});
+
+/** A VPN that carries some networks only, the internet going around it: worth knowing which. */
+const vpnSplit: Rule = (snap) =>
+	vpnViews(snap).flatMap(([view, where]): Finding[] => {
+		const internet = routeTo(view, INTERNET[4]);
+		return upVpns(view).flatMap((vpn): Finding[] => {
+			// all traffic through it is vpn-all-traffic's
+			if (FAMILIES.some((f) => routeTo(view, INTERNET[f]).iface === vpn.name))
+				return [];
+			const own = new Set(vpn.addresses.map((a) => a.address));
+			const carried = view.routes.filter(
+				(r) =>
+					r.iface === vpn.name &&
+					r.prefix > 0 &&
+					!isLinkLocalNet(r) &&
+					!own.has(r.dest),
+			);
+			if (!carried.length) return [];
+			const { shown, more } = widest(carried);
+			// a link-local server is on whichever link it is, not beyond the VPN
+			const dns = view.dns.filter(
+				(d) => !isLinkLocal(d) && routeTo(view, d).iface === vpn.name,
+			);
+			return [
+				{
+					rule: "vpn-split",
+					severity: "info",
+					title: `${where}the VPN on ${vpnLabel(vpn)} carries ${carried.length} network${carried.length > 1 ? "s" : ""}, the rest goes around it`,
+					details: [
+						`through it: ${shown.map(net).join(", ")}${more ? ` and ${more} more` : ""}`,
+						...(internet.route
+							? [`the internet: ${routeText(internet.route)}`]
+							: []),
+						...(dns.length
+							? [
+									`DNS servers through it: ${dns.join(", ")}: lookups to them fail while it is down`,
+								]
+							: []),
+						...(where
+							? ["WSL's traffic leaves through Windows, and takes the same way"]
+							: []),
+					],
+					fix: "nothing to do when that is the point. To know which way a host goes: nethound route HOST. One that should go through it and doesn't: its network is missing from the VPN's, a setting of its administrator",
+				},
+			];
+		});
+	});
+
+/** In WSL, a VPN Windows runs whose DNS servers WSL doesn't ask: the company's names resolve on
+ * Windows, not in WSL, though its traffic would go through the VPN. */
+const wslVpnDns: Rule = (snap) => {
+	const win = windowsView(snap);
+	if (snap.environment !== "wsl" || !win) return [];
+	// WSL's traffic leaves through Windows (NAT), not by an interface of its own (mirrored)
+	if (!throughWindows(snap, routeTo(snap, INTERNET[4]))) return [];
+	const windowsOwn = new Set(
+		win.interfaces.flatMap((i) => i.addresses.map((a) => a.address)),
+	);
+	// WSL's own resolver that asks Windows: its NAT DNS proxy, or dnsTunneling's 10.255.255.254
+	const asksWindows = snap.dns.some(
+		(d) =>
+			windowsOwn.has(d) ||
+			snap.interfaces.some(
+				(i) =>
+					i.kind === "loopback" &&
+					!isLoopback(d) &&
+					i.addresses.some((a) => a.address === d),
+			),
+	);
+	if (asksWindows) return [];
+	const upstream = snap.dns.filter((d) => !isLoopback(d));
+	return upVpns(win).flatMap((vpn): Finding[] => {
+		const servers = snap.windowsRouting?.dns?.[vpn.name] ?? [];
+		if (!servers.length || servers.some((d) => snap.dns.includes(d))) return [];
+		const reached = servers.filter(
+			(d) => throughWindows(snap, routeTo(snap, d))?.vpn,
+		);
+		const resolved = snap.dns.includes("127.0.0.53");
+		const list = servers.join(" ");
+		return [
+			{
+				rule: "wsl-vpn-dns",
+				severity: "warning",
+				title: `WSL doesn't ask the DNS servers of Windows' VPN on ${vpnLabel(vpn)}`,
+				details: [
+					`Windows asks ${servers.join(", ")}: the names only they know (the company's) resolve on Windows`,
+					upstream.length
+						? `WSL asks ${upstream.join(", ")}${resolved ? " (behind systemd-resolved's 127.0.0.53)" : ""}, which don't know them: those names fail here`
+						: "WSL asks none of them: those names fail here",
+					...(reached.length
+						? [
+								`WSL reaches ${reached.join(", ")} all the same: through Windows, into the VPN`,
+							]
+						: []),
+				],
+				fix: `${
+					resolved
+						? `give systemd-resolved the VPN's servers first: DNS=${list} ${upstream.join(" ")} under [Resolve] in /etc/systemd/resolved.conf, then sudo systemctl restart systemd-resolved`
+						: `put nameserver ${servers[0]} first in /etc/resolv.conf`
+				}; or let WSL ask Windows: dnsTunneling=true under [wsl2] in %UserProfile%\\.wslconfig, generateResolvConf = true under [network] in /etc/wsl.conf, then wsl --shutdown`,
+			},
+		];
+	});
+};
+
+/** In WSL, an MTU bigger than Windows' VPN's: what WSL sends bigger than the tunnel takes is
+ * dropped on the way, often without the ICMP that would make it send smaller packets. */
+const wslVpnMtu: Rule = (snap) => {
+	const win = windowsView(snap);
+	if (snap.environment !== "wsl" || !win) return [];
+	return upVpns(win).flatMap((vpn): Finding[] => {
+		const carried = win.routes.find(
+			(r) => r.iface === vpn.name && r.prefix > 0 && r.prefix < 32,
+		);
+		if (!vpn.mtu || !carried) return [];
+		const r = routeTo(snap, carried.dest);
+		const out = snap.interfaces.find((i) => i.name === r.iface);
+		if (!out?.mtu || out.mtu <= vpn.mtu || !throughWindows(snap, r)?.vpn)
+			return [];
+		return [
+			{
+				rule: "wsl-vpn-mtu",
+				severity: "warning",
+				title: `${out.name}'s MTU, ${out.mtu}, is more than the ${vpn.mtu} of Windows' VPN on ${vpnLabel(vpn)}`,
+				details: [
+					`packets WSL sends to the VPN's networks bigger than ${vpn.mtu} bytes are dropped on the way, often without the ICMP that would tell WSL to send smaller ones`,
+					"the sign: connections that open, then stall on a big transfer (git clone, ssh, docker pull, a TLS handshake)",
+				],
+				fix: `sudo ip link set ${out.name} mtu ${vpn.mtu}, until WSL restarts; for good: command = ip link set ${out.name} mtu ${vpn.mtu} under [boot] in /etc/wsl.conf`,
+			},
+		];
+	});
 };
 
 const PRIVATE: [string, number][] = [
@@ -684,6 +831,9 @@ export const RULES: Rule[] = [
 	noDefaultRoute,
 	defaultRoutes,
 	vpnAllTraffic,
+	vpnSplit,
+	wslVpnDns,
+	wslVpnMtu,
 	dnsServers,
 ];
 

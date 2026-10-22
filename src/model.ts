@@ -27,6 +27,8 @@ export interface Iface {
 	name: string;
 	index: number;
 	kind: IfaceKind;
+	/** Windows: the adapter's description, "Fortinet SSL VPN Virtual Ethernet Adapter". */
+	description?: string;
 	state: "up" | "down" | "unknown";
 	mtu: number;
 	mac?: string;
@@ -322,6 +324,13 @@ export interface Snapshot {
 	/** In WSL, for nethound doctor: the TCP ports Windows listens on, which its localhost reaches
 	 * before WSL's. */
 	windowsPorts?: WindowsPort[];
+	/** In WSL behind NAT: Windows' IPv4 interfaces and routes, where Windows sends what WSL hands
+	 * it (through a VPN Windows runs, invisible from WSL), and its DNS servers by interface. */
+	windowsRouting?: {
+		interfaces: Iface[];
+		routes: Route[];
+		dns?: Record<string, string[]>;
+	};
 	/** Linux: the other network namespaces, containers' first, with what listens in each. */
 	namespaces?: Namespace[];
 	/** For nethound doctor and who: what filters inbound connections. */

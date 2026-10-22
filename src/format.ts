@@ -8,7 +8,9 @@ import {
 	type Peer,
 	publishedTarget,
 	type RouteResult,
+	VPN_KINDS,
 	type WhoReport,
+	widest,
 } from "./analyze.ts";
 import type { Finding } from "./doctor.ts";
 import { outside, verdictFor } from "./firewall.ts";
@@ -193,9 +195,13 @@ export function peerLabel(p: Peer, remote: string, o?: RenderOptions): string {
 const routeVia = (r: RouteResult) =>
 	r.kind === "unreachable"
 		? "no route"
-		: r.gateway
-			? `via ${r.iface} → ${r.gateway}`
-			: `via ${r.iface}`;
+		: `via ${r.iface}${r.gateway ? ` → ${r.gateway}` : ""}${
+				r.vpn
+					? " (VPN)"
+					: r.windows?.vpn
+						? ` → Windows' VPN on ${r.windows.iface}`
+						: ""
+			}`;
 
 export function renderList(ls: Listener[], o: RenderOptions): string {
 	const c = paint(o);
@@ -247,7 +253,17 @@ function ifaceHeader(i: Iface, o: RenderOptions, note = ""): string {
 			: i.state === "down"
 				? c.red("down")
 				: c.dim(i.state);
-	return [c.bold(i.name), i.kind, state, cidr(i).join(" "), note && c.dim(note)]
+	const vpn = VPN_KINDS.includes(i.kind)
+		? ["VPN", i.description].filter(Boolean).join(": ")
+		: "";
+	return [
+		c.bold(i.name),
+		i.kind,
+		state,
+		cidr(i).join(" "),
+		vpn && c.cyan(vpn),
+		note && c.dim(note),
+	]
 		.filter(Boolean)
 		.join("  ");
 }
@@ -274,6 +290,23 @@ const routeLabel = (r: Route) =>
 	(r.prefix === 0 ? "default" : `${r.dest}/${r.prefix}`) +
 	(r.gateway ? ` via ${r.gateway}` : "");
 
+/** An interface's routes; a VPN's hundreds cut to the widest: "282 routes via 10.8.0.1:
+ * 10.20.0.0/16, … and 276 more". */
+function routesText(rs: Route[]): string {
+	const all = shownRoutes(rs);
+	const { shown, more } = widest(all);
+	if (!more) return shown.map(routeLabel).join(", ");
+	// the routes a VPN pushes share its gateway: said once
+	const gateways = new Set(all.flatMap((r) => (r.gateway ? [r.gateway] : [])));
+	const one = gateways.size === 1 ? [...gateways][0] : undefined;
+	const labels = shown.map((r) =>
+		r.gateway === one
+			? routeLabel({ ...r, gateway: undefined })
+			: routeLabel(r),
+	);
+	return `${all.length} routes${one ? ` via ${one}` : ""}: ${labels.join(", ")} and ${more} more`;
+}
+
 export function renderInterfaces(
 	views: IfaceView[],
 	idle: string[],
@@ -286,7 +319,7 @@ export function renderInterfaces(
 		out.push(ifaceHeader(i, o, dockerNetwork(v)));
 		const lines: [string, string][] = [];
 		if (shownRoutes(v.routes).length)
-			lines.push(["routes", shownRoutes(v.routes).map(routeLabel).join(", ")]);
+			lines.push(["routes", routesText(v.routes)]);
 		if (i.members.length) {
 			const veth = i.members.filter((m) => m.startsWith("veth")).length;
 			lines.push([
@@ -555,7 +588,6 @@ export function renderRoute(
 ): string {
 	const c = paint(o);
 	const name = host === r.dest ? r.dest : `${host} (${r.dest})`;
-	const kv: [string, string][] = [];
 	switch (r.kind) {
 		case "loopback":
 			return `${c.bold(name)} is this machine, through the loopback ${c.dim("(lo)")}`;
@@ -563,25 +595,36 @@ export function renderRoute(
 			return `${c.bold(name)} is this machine: an address of ${r.iface}, delivered through the loopback`;
 		case "unreachable":
 			return `${c.bold(name)}: ${c.red("no route")}: packets to it are dropped`;
-		case "container":
-			kv.push(["is", `container ${r.container?.name}, on this machine`]);
-			break;
-		case "network":
-			kv.push(["is", `on the network of ${r.iface}, reached directly`]);
-			break;
-		case "gateway":
-			kv.push(["is", `beyond ${r.gateway}, the gateway on ${r.iface}`]);
 	}
-	kv.push(["interface", r.iface ?? ""]);
-	if (r.route)
-		kv.push([
-			"route",
-			`${routeLabel(r.route)}${r.route.metric ? ` metric ${r.route.metric}` : ""}`,
-		]);
-	if (r.source) kv.push(["from", r.source]);
+	const lines = (r: RouteResult) => {
+		const kv: [string, string][] = [];
+		if (r.kind === "container")
+			kv.push(["is", `container ${r.container?.name}, on this machine`]);
+		else if (r.kind === "network")
+			kv.push(["is", `on the network of ${r.iface}, reached directly`]);
+		else if (r.kind === "gateway")
+			kv.push(["is", `beyond ${r.gateway}, the gateway on ${r.iface}`]);
+		kv.push(["interface", r.iface ?? ""]);
+		if (r.route)
+			kv.push([
+				"route",
+				`${routeLabel(r.route)}${r.route.metric ? ` metric ${r.route.metric}` : ""}`,
+			]);
+		if (r.source) kv.push(["from", r.source]);
+		if (r.vpn) kv.push(["vpn", c.green(`through ${r.vpn}`)]);
+		else if (r.outside)
+			kv.push(["vpn", c.yellow(`not through ${r.outside.join(", ")}`)]);
+		return kv.map(([k, v]) => `  ${c.dim(k.padEnd(10))} ${v}`);
+	};
+	const w = r.windows;
 	return [
 		c.bold(name),
-		...kv.map(([k, v]) => `  ${c.dim(k.padEnd(10))} ${v}`),
+		...lines(r),
+		...(w
+			? w.kind === "unreachable"
+				? [`then Windows: ${c.red("no route")}: it drops packets to it`]
+				: [`then Windows ${c.dim(`(${r.gateway})`)} sends it on`, ...lines(w)]
+			: []),
 	].join("\n");
 }
 
@@ -604,9 +647,7 @@ export function renderMap(m: MapReport, o: RenderOptions): string {
 		const net = dockerNetwork(v);
 		out.push(ifaceHeader(i, o, net));
 		if (shownRoutes(v.routes).length)
-			out.push(
-				`  ${c.dim("routes")}  ${shownRoutes(v.routes).map(routeLabel).join(", ")}`,
-			);
+			out.push(`  ${c.dim("routes")}  ${routesText(v.routes)}`);
 		for (const l of v.listeners)
 			out.push(`  ${c.green("listen")}  ${listenLine(l)}`);
 		for (const x of v.containers)
@@ -640,6 +681,11 @@ export function renderMap(m: MapReport, o: RenderOptions): string {
 	if (m.dns.length) {
 		out.push(
 			`${c.dim("dns")}  ${m.dns.map((d) => `${d.server} ${c.dim(d.route.kind === "loopback" || d.route.kind === "local" ? "(local resolver)" : routeVia(d.route))}`).join(", ")}`,
+		);
+	}
+	for (const w of m.windowsVpns ?? []) {
+		out.push(
+			`${c.dim("windows")}  ${c.cyan(`VPN ${w.vpn}`)}: ${w.all ? "all traffic through it, WSL's too" : `${w.networks} network${w.networks === 1 ? "" : "s"} through it, WSL's traffic to them too; the rest by ${w.internet ?? "no route"}`} ${c.dim("(nethound route HOST says which way)")}`,
 		);
 	}
 	if (m.hidden)
@@ -686,10 +732,14 @@ function grouped(
 	const by = new Map<string, Map<string, number>>();
 	for (const x of conns) {
 		const who = connOwner(x);
+		// through a VPN: this machine's, or in WSL Windows'
+		const vpn =
+			x.peer.kind === "remote" &&
+			(x.peer.route.vpn || x.peer.route.windows?.vpn);
 		const to =
 			label === "local"
 				? peerLabel(x.peer, `:${x.remote.port}`, o)
-				: endpoint(x.remote);
+				: `${endpoint(x.remote)}${vpn ? c.cyan(" (VPN)") : ""}`;
 		const m = by.get(who) ?? new Map<string, number>();
 		m.set(to, (m.get(to) ?? 0) + 1);
 		by.set(who, m);
@@ -733,9 +783,10 @@ export function peerJson(p: Peer) {
 	}
 }
 
-export const routeJson = (r: RouteResult) => ({
+export const routeJson = (r: RouteResult): object => ({
 	...r,
 	container: containerJson(r.container),
+	windows: r.windows && routeJson(r.windows),
 });
 
 export const connectionJson = (x: Connection) => ({

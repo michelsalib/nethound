@@ -25,6 +25,8 @@ test("each system's fixture: a published database, dev servers off this machine"
 	// node on * (tcp46); the database is on 127.0.0.1 only; My App on :: and another on ::1, IPv6 only
 	expect(summary(macFixture())).toEqual([
 		"warning ipv6-only tcp 9090",
+		// utun4 carries 10.8.0.0/16
+		"info vpn-split undefined undefined",
 		"info ipv6-only tcp 5000",
 		"info exposed tcp 8080",
 	]);
@@ -257,6 +259,61 @@ test("a VPN taking all traffic, with 0.0.0.0/1 and 128.0.0.0/1; the LAN stays of
 	snap.routes = snap.routes.filter((r) => r.prefix !== 1);
 	snap.routes.push(route({ iface: "tun0", dest: "10.70.0.0", prefix: 16 }));
 	expect(byRule(snap, "vpn-all-traffic")).toEqual([]);
+});
+
+test("a split-tunnel VPN: what it carries, the internet around it, the DNS servers it takes", () => {
+	const snap = structuredClone(fixture([]));
+	snap.interfaces.push({
+		name: "Ethernet",
+		index: 9,
+		kind: "tun",
+		description: "Fortinet SSL VPN Virtual Ethernet Adapter",
+		state: "up",
+		mtu: 1300,
+		addresses: [{ family: 4, address: "10.8.0.2", prefix: 32 }],
+		members: [],
+		rxBytes: 0,
+		txBytes: 0,
+	});
+	for (let n = 0; n < 8; n++)
+		snap.routes.push(
+			route({
+				iface: "Ethernet",
+				dest: `10.${20 + n}.0.0`,
+				prefix: n < 2 ? 16 : 24,
+				gateway: "10.8.0.1",
+			}),
+		);
+	snap.dns = ["10.20.0.53", "192.168.1.1", "fe80::1"];
+	const [split] = byRule(snap, "vpn-split");
+	expect(split).toMatchObject({
+		severity: "info",
+		title:
+			"the VPN on Ethernet (Fortinet SSL VPN Virtual Ethernet Adapter) carries 8 networks, the rest goes around it",
+		details: [
+			"through it: 10.20.0.0/16, 10.21.0.0/16, 10.22.0.0/24, 10.23.0.0/24, 10.24.0.0/24, 10.25.0.0/24 and 2 more",
+			"the internet: default via 192.168.1.1 on eth0",
+			"DNS servers through it: 10.20.0.53: lookups to them fail while it is down",
+		],
+	});
+	// in WSL, the same VPN on Windows' side, and WSL's traffic with it
+	const wsl = structuredClone(fixture([]));
+	wsl.environment = "wsl";
+	wsl.windowsRouting = {
+		interfaces: snap.interfaces.filter((i) => i.name === "Ethernet"),
+		routes: snap.routes.filter((r) => r.iface === "Ethernet"),
+	};
+	const [win] = byRule(wsl, "vpn-split");
+	expect(win?.title).toStartWith("Windows: the VPN on Ethernet");
+	expect(win?.details.at(-1)).toBe(
+		"WSL's traffic leaves through Windows, and takes the same way",
+	);
+	// all traffic through it: vpn-all-traffic says so instead
+	snap.routes.push(
+		route({ iface: "Ethernet", prefix: 1, gateway: "10.8.0.1" }),
+	);
+	expect(byRule(snap, "vpn-split")).toEqual([]);
+	expect(byRule(snap, "vpn-all-traffic")).toHaveLength(1);
 });
 
 test("DNS: a server with no route; a private one only the default route reaches", () => {
