@@ -28,6 +28,14 @@ test("interfaces: kinds, states, bridges", () => {
 	expect(by.docker0?.state).toBe("down");
 });
 
+test("neighbours: from /proc/net/arp, an address still being resolved left out", () => {
+	expect(snap.neighbours).toEqual([
+		{ address: "192.168.1.1", mac: "a4:91:b1:12:34:56", iface: "eth0" },
+		{ address: "192.168.1.50", mac: "3c:22:fb:aa:bb:cc", iface: "eth0" },
+		{ address: "172.18.0.2", mac: "02:42:ac:12:00:02", iface: "br-abc" },
+	]);
+});
+
 test("routes: rejected, multicast and link-local host routes left out", () => {
 	expect(snap.routes.filter((r) => r.family === 4)).toEqual([
 		{

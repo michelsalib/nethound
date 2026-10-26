@@ -7,6 +7,16 @@ import { windowsFixture } from "./helpers.ts";
 const snap = windowsFixture();
 const by = Object.fromEntries(snap.interfaces.map((i) => [i.name, i]));
 
+test("neighbours: from Get-NetNeighbor, broadcast and multicast left out", () => {
+	expect(
+		snap.neighbours?.map((n) => `${n.address} ${n.mac} ${n.iface}`),
+	).toEqual([
+		"192.168.1.1 50:39:2f:0a:4c:20 Ethernet",
+		"192.168.1.25 a0:6f:aa:4c:df:02 Ethernet",
+		"172.20.83.30 00:15:5d:07:29:5f vEthernet (WSL (Hyper-V firewall))",
+	]);
+});
+
 test("interfaces: kinds from type and description", () => {
 	expect(snap.environment).toBe("windows");
 	expect(snap.interfaces.map((i) => `${i.name}: ${i.kind} ${i.state}`)).toEqual(

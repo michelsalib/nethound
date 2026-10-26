@@ -50,6 +50,23 @@ export interface State {
 	web: Record<string, Web>;
 	/** Ask the selected port whether it answers HTTP; off (--no-probe), every port is taken for one. */
 	probe: boolean;
+	/** The tab shown: the ports, or the whole picture as nethound map draws it. */
+	view: View;
+	/** The map's first line shown. */
+	mapTop: number;
+}
+
+/** The tabs, in order: tab moves to the next, 1 and 2 pick one. */
+export const VIEWS = ["ports", "map"] as const;
+export type View = (typeof VIEWS)[number];
+
+/** Shows a tab; the map reads more than the ports (neighbours, Windows' side in WSL), so it asks for
+ * a snapshot of its own at once. */
+export function showView(s: State, view: View): [State, Effect?] {
+	if (view === s.view) return [s];
+	return view === "map"
+		? [{ ...s, view, message: { text: "refreshing…" } }, { kind: "refresh" }]
+		: [{ ...s, view, message: undefined }];
 }
 
 export interface Key {
@@ -75,6 +92,8 @@ export const initialState = (self = process.pid, probe = true): State => ({
 	self,
 	web: {},
 	probe,
+	view: "ports",
+	mapTop: 0,
 });
 
 const ownerKey = (l: Listener) =>
@@ -261,6 +280,36 @@ export function move(s: State, by: number): State {
 	return { ...s, selected: rows[next]?.key, message: undefined };
 }
 
+/** Scrolls the map by `by` lines; how far it can go is the view's to say. */
+export const scrollMap = (s: State, by: number): State => ({
+	...s,
+	mapTop: Math.max(0, s.mapTop + by),
+});
+
+/** On the map, the keys scroll it; there is nothing to select, open or stop. */
+function mapKey(s: State, k: Key): [State, Effect?] {
+	switch (k.name) {
+		case "up":
+			return [scrollMap(s, -1)];
+		case "down":
+			return [scrollMap(s, 1)];
+		case "pageup":
+			return [scrollMap(s, -10)];
+		case "pagedown":
+			return [scrollMap(s, 10)];
+		case "home":
+			return [{ ...s, mapTop: 0 }];
+		case "end":
+			return [scrollMap(s, Infinity)];
+		case "escape":
+			return [{ ...s, message: undefined }];
+	}
+	if (k.ch === "q") return [s, { kind: "quit" }];
+	if (k.ch === "r")
+		return [{ ...s, message: { text: "refreshing…" } }, { kind: "refresh" }];
+	return [s];
+}
+
 export function handleKey(s: State, k: Key): [State, Effect?] {
 	if (k.ctrl && k.name === "c") return [s, { kind: "quit" }];
 	if (s.confirm) {
@@ -291,6 +340,13 @@ export function handleKey(s: State, k: Key): [State, Effect?] {
 		}
 		return [s];
 	}
+	if (k.name === "tab") {
+		const at = VIEWS.indexOf(s.view) + (k.shift ? -1 : 1);
+		return showView(s, VIEWS[(at + VIEWS.length) % VIEWS.length] ?? "ports");
+	}
+	const picked = k.ch ? VIEWS[Number(k.ch) - 1] : undefined;
+	if (picked) return showView(s, picked);
+	if (s.view === "map") return mapKey(s, k);
 	const r = selectedRow(s);
 	switch (k.name) {
 		case "up":

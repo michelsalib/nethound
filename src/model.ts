@@ -51,6 +51,14 @@ export interface Route {
 	metric: number;
 }
 
+/** A machine on one of this machine's networks that it has exchanged packets with lately: an entry
+ * of the system's neighbour table (ARP), read, never asked for. */
+export interface Neighbour {
+	address: string;
+	mac: string;
+	iface: string;
+}
+
 export interface Endpoint {
 	address: string;
 	port: number;
@@ -313,6 +321,8 @@ export interface Snapshot {
 	environment: "linux" | "wsl" | "macos" | "windows";
 	interfaces: Iface[];
 	routes: Route[];
+	/** For nethound map; IPv4 only, as Linux's /proc has no IPv6 neighbours. */
+	neighbours?: Neighbour[];
 	sockets: Socket[];
 	processes: Process[];
 	containers: Container[];
@@ -330,6 +340,8 @@ export interface Snapshot {
 		interfaces: Iface[];
 		routes: Route[];
 		dns?: Record<string, string[]>;
+		/** For nethound map: Windows' neighbour table, the machines on its own networks. */
+		neighbours?: Neighbour[];
 	};
 	/** Linux: the other network namespaces, containers' first, with what listens in each. */
 	namespaces?: Namespace[];

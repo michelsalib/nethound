@@ -21,7 +21,14 @@ import {
 	type State,
 	selectedRow,
 } from "./state.ts";
-import { render, scrolled, tableRoom } from "./view.ts";
+import {
+	mapLines,
+	mapRoom,
+	mapScrolled,
+	render,
+	scrolled,
+	tableRoom,
+} from "./view.ts";
 
 const ENTER = `\x1b[?1049h\x1b[?25l${MOUSE_ON}`; // alternate screen, hide cursor, report the mouse
 const LEAVE = `${MOUSE_OFF}\x1b[?25h\x1b[?1049l`;
@@ -49,6 +56,8 @@ export function runWatch(o: WatchOptions): Promise<void> {
 	let state: State = initialState(process.pid, o.probe);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let reading = false;
+	/** A refresh asked for while one runs (m, for the map's own snapshot): run it right after. */
+	let again = false;
 	let done = false;
 	/** Rows being asked whether they answer HTTP. */
 	const asking = new Set<string>();
@@ -61,6 +70,16 @@ export function runWatch(o: WatchOptions): Promise<void> {
 			const width = Math.max(20, (stdout.columns || 80) - 1);
 			// the list scrolls only as far as the selection needs, and stays there
 			state = { ...state, top: scrolled(state, tableRoom(height())) };
+			// the map no further down than its last screen, so scrolling back up starts at once
+			if (state.view === "map")
+				state = {
+					...state,
+					mapTop: mapScrolled(
+						state,
+						mapLines(state, width, { color: false }).length,
+						mapRoom(height()),
+					),
+				};
 			const lines = render(state, width, height(), {
 				color: o.color,
 				now: Date.now(),
@@ -76,13 +95,23 @@ export function runWatch(o: WatchOptions): Promise<void> {
 		};
 
 		const read = () => {
-			if (reading || done) return;
+			if (done) return;
+			if (reading) {
+				again = true;
+				return;
+			}
 			reading = true;
 			clearTimeout(timer);
 			const [cmd, args] = self();
 			execFile(
 				cmd,
-				[...args, "--snapshot", ...o.args],
+				// the map's snapshot holds more: the neighbours, and in WSL Windows' routing
+				[
+					...args,
+					...(state.view === "map" ? ["map"] : []),
+					"--snapshot",
+					...o.args,
+				],
 				{ maxBuffer: 64 * 1024 * 1024, windowsHide: true },
 				(error, out) => {
 					reading = false;
@@ -106,7 +135,10 @@ export function runWatch(o: WatchOptions): Promise<void> {
 						};
 					}
 					draw();
-					timer = setTimeout(read, o.interval);
+					if (again) {
+						again = false;
+						read();
+					} else timer = setTimeout(read, o.interval);
 				},
 			);
 		};
@@ -114,6 +146,7 @@ export function runWatch(o: WatchOptions): Promise<void> {
 		// the selected port, once it is selected and not asked yet: answers come in a few
 		// milliseconds, the silent ones within the probe's timeout
 		const ask = () => {
+			if (state.view === "map") return;
 			const r = selectedRow(state);
 			if (!o.probe || !r || r.closed || state.web[r.key] || asking.has(r.key))
 				return;

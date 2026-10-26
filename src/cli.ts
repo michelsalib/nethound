@@ -219,6 +219,7 @@ async function main(argv: string[]): Promise<number> {
 			command ?? "",
 		),
 		firewall: command === "doctor" || command === "who",
+		neighbours: command === "map",
 	});
 	if (!values["show-secrets"])
 		for (const p of snap.processes) p.cmd = maskCmd(p.cmd);
@@ -290,7 +291,12 @@ async function main(argv: string[]): Promise<number> {
 		case "interfaces": {
 			const m = map(snap);
 			print(
-				() => renderInterfaces(m.interfaces, m.idle, opts),
+				() =>
+					renderInterfaces(
+						m.interfaces,
+						m.idle.map((i) => i.name),
+						opts,
+					),
 				() => m.interfaces.map(ifaceViewJson),
 			);
 			return 0;

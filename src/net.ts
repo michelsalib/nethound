@@ -1,7 +1,7 @@
 // IP addresses as the kernel writes them in /proc, and the arithmetic routes need.
 
 import { isIPv4, isIPv6 } from "node:net";
-import type { Address, Endpoint, Family } from "./model.ts";
+import type { Address, Endpoint, Family, Neighbour } from "./model.ts";
 
 /** The bytes of an address, 4 or 16 of them; undefined when it is not an IP address. */
 export function ipBytes(ip: string): number[] | undefined {
@@ -141,3 +141,21 @@ export const maskPrefix = (hex: string) =>
 		(n, b) => n + b.toString(2).replaceAll("0", "").length,
 		0,
 	);
+
+/** A neighbour table's entry, its MAC address as 3c:22:fb:12:34:56; undefined for what is no machine:
+ * an address still being resolved (no MAC, or zeros), broadcast and multicast. */
+export function neighbour(
+	address: string,
+	mac: string,
+	iface: string,
+): Neighbour | undefined {
+	const bytes = mac.toLowerCase().split(/[-:]/);
+	if (bytes.length !== 6 || bytes.some((b) => !/^[0-9a-f]{1,2}$/.test(b)))
+		return;
+	const m = bytes.map((b) => b.padStart(2, "0")).join(":");
+	// the group bit of the first byte: broadcast and multicast MACs
+	if (m === "00:00:00:00:00:00" || Number.parseInt(m.slice(0, 2), 16) & 1)
+		return;
+	if (/^(22[4-9]|23\d|255)\./.test(address)) return;
+	return { address, mac: m, iface };
+}

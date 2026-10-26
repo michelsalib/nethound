@@ -12,6 +12,13 @@ import { macFixture } from "./helpers.ts";
 const snap = macFixture();
 const by = Object.fromEntries(snap.interfaces.map((i) => [i.name, i]));
 
+test("neighbours: from arp -an, MACs padded, unresolved, broadcast and multicast left out", () => {
+	expect(snap.neighbours).toEqual([
+		{ address: "192.168.1.1", mac: "3c:22:fb:aa:bb:cc", iface: "en0" },
+		{ address: "192.168.1.42", mac: "08:00:27:01:02:03", iface: "en0" },
+	]);
+});
+
 test("interfaces: kinds from names and networksetup, state from status:, bridge members", () => {
 	expect(snap.environment).toBe("macos");
 	expect(snap.interfaces.map((i) => `${i.name} ${i.kind} ${i.state}`)).toEqual([

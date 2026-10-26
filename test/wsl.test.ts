@@ -12,6 +12,7 @@ import type { Snapshot } from "../src/model.ts";
 import {
 	parseIpconfigDescriptions,
 	parseNetshInterfaces,
+	parseNetshNeighbours,
 	parseNetshRoutes,
 	parseNetstatListeners,
 	parseNslookup,
@@ -184,6 +185,35 @@ Configuration pour l’interface « Wi-Fi »
 Configuration pour l’interface « Connexion réseau Bluetooth »
 `;
 
+// the machines on the Wi-Fi; WSL itself (192.168.1.10) on the virtual switch
+const NETSH_NEIGHBOURS = `
+Interface 1 : Loopback Pseudo-Interface 1
+
+
+Adresse Internet                              Adresse physique   Type
+--------------------------------------------  -----------------  -----------
+224.0.0.22                                                       Permanent
+
+Interface 22 : Wi-Fi
+
+
+Adresse Internet                              Adresse physique   Type
+--------------------------------------------  -----------------  -----------
+10.0.0.1                                      50-39-2f-0a-4c-20  Joignable
+10.0.0.23                                     a0-6f-aa-4c-df-02  Caduque
+10.0.0.40                                     Inaccessible       Inaccessible
+10.0.0.41                                     00-00-00-00-00-00  Inaccessible
+10.0.0.255                                    ff-ff-ff-ff-ff-ff  Permanent
+224.0.0.251                                   01-00-5e-00-00-fb  Permanent
+
+Interface 39 : vEthernet (WSL (Hyper-V firewall))
+
+
+Adresse Internet                              Adresse physique   Type
+--------------------------------------------  -----------------  -----------
+192.168.1.10                                  00-15-5d-07-29-5f  Détecter
+`;
+
 // nslookup.exe for a name only the VPN's servers know, and for one nobody knows
 const NSLOOKUP = `Serveur :   dc1.corp.local
 Address:  10.20.0.53
@@ -205,6 +235,7 @@ const windowsRun = (cmd: string, args: string[]) =>
 		"netsh.exe interface ipv4 show route": NETSH_ROUTES,
 		"ipconfig.exe /all": IPCONFIG,
 		"netsh.exe interface ipv4 show dnsservers": NETSH_DNS,
+		"netsh.exe interface ipv4 show neighbors": NETSH_NEIGHBOURS,
 	})[[cmd, ...args].join(" ")] ?? "";
 
 test("Windows' routing from netsh and ipconfig, whatever their language", () => {
@@ -330,6 +361,34 @@ test("in WSL, the map says which VPN Windows runs", () => {
 	]);
 	expect(renderMap(map(snap), { color: false })).toContain(
 		"windows  VPN Ethernet (Fortinet SSL VPN Virtual Ethernet Adapter): 1 network through it, WSL's traffic to them too; the rest by Wi-Fi",
+	);
+});
+
+test("in WSL, the map lists the machines on Windows' networks, WSL itself left out", () => {
+	expect(parseNetshNeighbours(NETSH_NEIGHBOURS)).toEqual([
+		{ address: "10.0.0.1", mac: "50:39:2f:0a:4c:20", iface: "Wi-Fi" },
+		{ address: "10.0.0.23", mac: "a0:6f:aa:4c:df:02", iface: "Wi-Fi" },
+		{
+			address: "192.168.1.10",
+			mac: "00:15:5d:07:29:5f",
+			iface: "vEthernet (WSL (Hyper-V firewall))",
+		},
+	]);
+	const snap = {
+		...fixture(),
+		environment: "wsl" as const,
+		windowsRouting: {
+			...readWindowsRouting(windowsRun),
+			neighbours: parseNetshNeighbours(NETSH_NEIGHBOURS),
+		},
+	} as Snapshot;
+	expect(
+		map(snap).windowsNeighbours?.map(
+			(w) => `${w.iface.name}: ${w.neighbours.map((n) => n.address)}`,
+		),
+	).toEqual(["Wi-Fi: 10.0.0.1,10.0.0.23"]);
+	expect(renderMap(map(snap), { color: false })).toContain(
+		"on Windows\nWi-Fi  10.0.0.16\n  neighbours  10.0.0.1 gateway, 10.0.0.23",
 	);
 });
 

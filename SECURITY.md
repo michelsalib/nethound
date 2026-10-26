@@ -21,16 +21,19 @@ These are worth knowing when you judge what counts as a vulnerability:
   (`kill -y` skips the question). Stopping with what started a server climbs only through package
   runners (`npm`, `bun run`, a watcher, a `sh -c` they started), never into an interactive shell, an IDE,
   another user's process or nethound itself. What it reads:
-  - on Linux, `/proc` (sockets, each process's open files, command line and network namespace, and
-    the sockets of each container's and namespace's own `/proc/PID/net`), `/run/netns`, `/sys/class/net`,
-    `/etc/resolv.conf` and systemd-resolved's `/run/systemd/resolve/resolv.conf`;
-  - on macOS, what `netstat`, `lsof`, `ifconfig`, `networksetup`, `ps` and `/etc/resolv.conf` print;
+  - on Linux, `/proc` (sockets, each process's open files, command line and network namespace, the
+    sockets of each container's and namespace's own `/proc/PID/net`, and the neighbour table in
+    `/proc/net/arp`), `/run/netns`, `/sys/class/net`, `/etc/resolv.conf` and systemd-resolved's
+    `/run/systemd/resolve/resolv.conf`;
+  - on macOS, what `netstat`, `lsof`, `ifconfig`, `networksetup`, `ps`, `arp -an` and
+    `/etc/resolv.conf` print;
   - on Windows, what one PowerShell script prints, from `Get-NetTCPConnection`, `Get-NetUDPEndpoint`,
-    `Get-NetRoute`, `Win32_Process` and .NET's `NetworkInterface`. The script is part of nethound
-    (`src/windows/collect.ts`) and is passed to `powershell.exe` with `-EncodedCommand`, not read from
-    a file.
+    `Get-NetRoute`, `Get-NetNeighbor`, `Win32_Process` and .NET's `NetworkInterface`. The script is
+    part of nethound (`src/windows/collect.ts`) and is passed to `powershell.exe` with
+    `-EncodedCommand`, not read from a file.
   - in WSL, for `nethound doctor` only, what Windows' own `netstat.exe -ano`, `tasklist.exe` and
-    `netsh.exe interface portproxy show all` print: the ports Windows listens on.
+    `netsh.exe interface portproxy show all` print: the ports Windows listens on; for `nethound map`,
+    what `netsh.exe interface ipv4 show neighbors` prints: Windows' neighbour table.
 - **To read the firewall** (`who` and `doctor` only): on Linux as root, `iptables-save`,
   `ip6tables-save` and `nft -j list ruleset`, and otherwise ufw's and firewalld's settings in `/etc`
   and `/usr/lib/firewalld`; on macOS, `socketfilterfw`'s `--get…` and `--listapps` queries; on

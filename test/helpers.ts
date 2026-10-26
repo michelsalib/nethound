@@ -37,6 +37,7 @@ export const fixture = (containers: Container[] = [pg]) =>
 		containers,
 		uid: 1000,
 		hostname: "box",
+		neighbours: true,
 	});
 
 const recorded = (dir: string, file: string) =>
@@ -58,6 +59,7 @@ export const macFixture = (containers: Container[] = []) =>
 				"lsof -a -d cwd -Fn -p 3000,3100,3200": "lsof-cwd.txt",
 				"ps -axww -o pid=,args=": "ps-args.txt",
 				"cat /etc/resolv.conf": "resolv.conf",
+				"arp -an": "arp-an.txt",
 			};
 			const file = files[[cmd, ...args].join(" ")];
 			if (!file)
@@ -67,6 +69,7 @@ export const macFixture = (containers: Container[] = []) =>
 		containers,
 		uid: 501,
 		hostname: "mac",
+		neighbours: true,
 	});
 
 /** The Windows machine test/fixtures/windows describes, as nethound's PowerShell prints it. */
@@ -80,4 +83,5 @@ export const windowsFixture = (containers: Container[] = []) =>
 		},
 		containers,
 		hostname: "win",
+		neighbours: true,
 	});

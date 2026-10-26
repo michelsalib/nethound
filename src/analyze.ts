@@ -7,6 +7,7 @@ import type {
 	Family,
 	Iface,
 	Namespace,
+	Neighbour,
 	Process,
 	Proto,
 	PublishedPort,
@@ -17,6 +18,7 @@ import type {
 import {
 	familyOf,
 	inNetwork,
+	ipBytes,
 	isLinkLocal,
 	isLoopback,
 	isWildcard,
@@ -487,6 +489,9 @@ export interface IfaceView {
 	/** For the loopback: connections between processes of this machine, client side. */
 	local: Connection[];
 	containers: { container: Container; ip?: string }[];
+	/** The machines on its network it has exchanged packets with lately, from the neighbour table:
+	 * its containers left out (listed above), sorted by address. */
+	neighbours: Neighbour[];
 }
 
 export interface MapReport {
@@ -494,12 +499,19 @@ export interface MapReport {
 	environment: Snapshot["environment"];
 	everywhere: Listener[];
 	interfaces: IfaceView[];
-	/** Interfaces down with no address, named only. */
-	idle: string[];
+	/** Interfaces down with no address but link-local ones, named only. */
+	idle: Iface[];
 	dns: { server: string; route: RouteResult }[];
 	/** What listens inside containers and other namespaces. */
 	inside: InsideListener[];
 	hidden: number;
+	/** In WSL behind NAT: Windows' interfaces and the machines on their networks, which WSL can't
+	 * see from behind the NAT. */
+	windowsNeighbours?: {
+		iface: Iface;
+		routes: Route[];
+		neighbours: Neighbour[];
+	}[];
 	/** In WSL behind NAT: the VPNs Windows runs, which WSL's traffic goes through too. */
 	windowsVpns?: {
 		vpn: string;
@@ -511,12 +523,20 @@ export interface MapReport {
 	}[];
 }
 
+const byAddress = (a: string, b: string) => {
+	const x = ipBytes(a) ?? [];
+	const y = ipBytes(b) ?? [];
+	for (let i = 0; i < Math.max(x.length, y.length); i++)
+		if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0);
+	return 0;
+};
+
 export function map(snap: Snapshot): MapReport {
 	const ls = listeners(snap);
 	// the map is what is connected now: not sockets opening or closing
 	const conns = connections(snap, ls).filter((c) => c.state === "ESTABLISHED");
 	const views: IfaceView[] = [];
-	const idle: string[] = [];
+	const idle: Iface[] = [];
 	for (const iface of snap.interfaces) {
 		// bridge ports are listed with their bridge
 		if (iface.master) continue;
@@ -546,13 +566,22 @@ export function map(snap: Snapshot): MapReport {
 						)
 					: [],
 			containers,
+			neighbours: (snap.neighbours ?? [])
+				.filter(
+					(n) =>
+						n.iface === iface.name &&
+						!containers.some((x) => x.ip === n.address),
+				)
+				.sort((a, b) => byAddress(a.address, b.address)),
 		};
+		// a link-local address is one any interface gives itself (Windows' Wi-Fi Direct adapters):
+		// down with only those, it is as idle as one with none
 		const empty =
-			!iface.addresses.length &&
+			iface.addresses.every((a) => isLinkLocal(a.address)) &&
 			!view.listeners.length &&
 			!view.outbound.length &&
 			!containers.length;
-		if (iface.state === "down" && empty) idle.push(iface.name);
+		if (iface.state === "down" && empty) idle.push(iface);
 		else views.push(view);
 	}
 	return {
@@ -565,7 +594,36 @@ export function map(snap: Snapshot): MapReport {
 		inside: insideListeners(snap),
 		hidden: snap.hidden,
 		...(snap.windowsRouting && { windowsVpns: windowsVpns(snap) }),
+		...(snap.windowsRouting?.neighbours && {
+			windowsNeighbours: windowsNeighbours(snap),
+		}),
 	};
+}
+
+function windowsNeighbours(
+	snap: Snapshot,
+): NonNullable<MapReport["windowsNeighbours"]> {
+	const win = snap.windowsRouting;
+	// WSL's own addresses: WSL itself on the virtual switch, and with mirrored networking Windows'
+	// interfaces, whose neighbours WSL lists already
+	const own = new Set(
+		snap.interfaces.flatMap((i) => i.addresses.map((a) => a.address)),
+	);
+	return (win?.interfaces ?? []).flatMap((iface) => {
+		if (iface.addresses.some((a) => own.has(a.address))) return [];
+		const neighbours = (win?.neighbours ?? [])
+			.filter((n) => n.iface === iface.name && !own.has(n.address))
+			.sort((a, b) => byAddress(a.address, b.address));
+		return neighbours.length
+			? [
+					{
+						iface,
+						routes: (win?.routes ?? []).filter((r) => r.iface === iface.name),
+						neighbours,
+					},
+				]
+			: [];
+	});
 }
 
 function windowsVpns(snap: Snapshot): NonNullable<MapReport["windowsVpns"]> {
