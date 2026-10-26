@@ -38,7 +38,14 @@ const withSocket = (snap: Snapshot, s: Socket): Snapshot => ({
 const keys = (s: State, ...ks: string[]) => {
 	let effect: ReturnType<typeof handleKey>[1];
 	for (const k of ks) {
-		const named = ["up", "down", "return", "escape", "backspace"].includes(k);
+		const named = [
+			"up",
+			"down",
+			"return",
+			"escape",
+			"backspace",
+			"tab",
+		].includes(k);
 		[s, effect] = handleKey(s, named ? { name: k } : { ch: k });
 	}
 	return [s, effect] as const;
@@ -129,6 +136,52 @@ test("the screen: where each server runs, and the selected one in detail", () =>
 	expect(text).toMatch(/^── tcp 8080 {2}node 300 ─+$/m);
 });
 
+test("tabs: the map, live, scrolled by the keys and the wheel; tab, 1 or a click back to the ports", () => {
+	let s = applySnapshot(initialState(999), base, 0);
+	let effect: ReturnType<typeof handleKey>[1];
+	[s, effect] = keys(s, "tab");
+	// the map reads more than the ports: a snapshot of its own at once
+	expect(effect).toEqual({ kind: "refresh" });
+	const o = { color: false, now: 1760000000000 };
+	const screen = (st: State, height = 40) =>
+		render(st, 100, height, o).join("\n");
+	expect(screen(s)).toMatch(
+		/^nethound watch {3}1 Ports {3}2 Map {3}box +updated/,
+	);
+	expect(screen(s)).toContain(
+		"eth0  ethernet  up  192.168.1.10/24\n  routes      default via 192.168.1.1, 192.168.1.0/24",
+	);
+	expect(screen(s)).toContain(
+		"  neighbours  192.168.1.1 gateway, 192.168.1.50",
+	);
+	expect(screen(s)).toContain("↑↓ scroll  tab ports  r refresh  q quit");
+	// k stops nothing here: there is no selection
+	expect(keys(s, "k")[0].confirm).toBeUndefined();
+	// a short screen: the map scrolls, and says which lines it shows
+	[s] = keys(s, "down", "down");
+	expect(s.mapTop).toBe(2);
+	expect(screen(s, 12)).toMatch(/3–11 of \d+ {2}updated/);
+	[s] = handleMouse(s, { button: 64, x: 5, y: 5, pressed: true }, 12);
+	expect(s.mapTop).toBe(0);
+	[s, effect] = keys(s, "tab");
+	expect(effect).toBeUndefined();
+	expect(s.view).toBe("ports");
+	expect(screen(s)).toMatch(
+		/^nethound watch {3}1 Ports {3}2 Map {3}box {2}\d+ ports/,
+	);
+	expect(screen(s)).toContain("↑↓ select");
+	// 2 picks the map, a click on " 1 Ports " the ports again
+	[s, effect] = keys(s, "2");
+	expect(s.view).toBe("map");
+	expect(effect).toEqual({ kind: "refresh" });
+	[s] = handleMouse(s, { button: 0, x: 17, y: 0, pressed: true }, 40);
+	expect(s.view).toBe("ports");
+	// typing a filter, 2 is part of it
+	[s] = keys(s, "/", "2");
+	expect(s.view).toBe("ports");
+	expect(s.filter).toBe("2");
+});
+
 // a real terminal: the built CLI in a pseudo-terminal (Python's pty, not on Windows)
 const python = spawnSync("python3", ["--version"]).status === 0;
 test.skipIf(!python || process.platform === "win32")(
@@ -143,6 +196,9 @@ test.skipIf(!python || process.platform === "win32")(
 		const steps = [
 			["wait", "nethound watch"],
 			["wait", "PORT"],
+			// the map, from a snapshot of its own
+			["send", "\t"],
+			["wait", "scroll"],
 			["send", "q"],
 		];
 		const r = spawnSync(

@@ -4,8 +4,8 @@
 // answer in half a second, where PowerShell takes several.
 
 import { isIP } from "node:net";
-import type { Snapshot, WindowsPort } from "./model.ts";
-import { plainIP } from "./net.ts";
+import type { Neighbour, Snapshot, WindowsPort } from "./model.ts";
+import { neighbour, plainIP } from "./net.ts";
 import type { Run } from "./run.ts";
 import { kindOf } from "./windows/collect.ts";
 
@@ -130,6 +130,24 @@ export function parseNetshAddresses(text: string): Map<number, string[]> {
 		const a = line.match(/\s(\d+\.\d+\.\d+\.\d+)\s*$/);
 		if (a?.[1] && index !== undefined)
 			out.set(index, [...(out.get(index) ?? []), a[1]]);
+	}
+	return out;
+}
+
+/** Windows' IPv4 neighbour table, from `netsh interface ipv4 show neighbors`: an "Interface 22 :
+ * Wi-Fi" line, then rows of address, MAC and state (translated; an unresolved one has no MAC). */
+export function parseNetshNeighbours(text: string): Neighbour[] {
+	const out: Neighbour[] = [];
+	let iface: string | undefined;
+	for (const line of text.split("\n")) {
+		const head = line.match(/^Interface \d+\s*:\s*(.+?)\s*$/);
+		if (head?.[1]) {
+			iface = head[1];
+			continue;
+		}
+		const m = line.match(/^(\d+\.\d+\.\d+\.\d+)\s+(\S+)/);
+		const n = m && iface && neighbour(m[1] ?? "", m[2] ?? "", iface);
+		if (n) out.push(n);
 	}
 	return out;
 }

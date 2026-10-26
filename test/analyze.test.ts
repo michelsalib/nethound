@@ -130,7 +130,7 @@ test("map: bound-everywhere apart, bridge ports folded, idle interfaces named", 
 		"eth0",
 		"br-abc",
 	]);
-	expect(m.idle).toEqual(["docker0"]);
+	expect(m.idle.map((i) => i.name)).toEqual(["docker0"]);
 	const by = Object.fromEntries(m.interfaces.map((v) => [v.iface.name, v]));
 	expect(by.lo?.listeners.map((l) => l.port)).toEqual([53, 5000]);
 	expect(by.lo?.local.map((c) => c.remote.port)).toEqual([5000]);
@@ -139,6 +139,12 @@ test("map: bound-everywhere apart, bridge ports folded, idle interfaces named", 
 		"140.82.121.4",
 	]);
 	expect(by["br-abc"]?.containers.map((x) => x.container.name)).toEqual(["pg"]);
+	expect(by.eth0?.neighbours.map((n) => n.address)).toEqual([
+		"192.168.1.1",
+		"192.168.1.50",
+	]);
+	// pg is held by the bridge, not listed again as a neighbour
+	expect(by["br-abc"]?.neighbours).toEqual([]);
 	expect(m.dns[0]?.route.kind).toBe("loopback");
 });
 

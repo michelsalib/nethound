@@ -1,13 +1,19 @@
 // What `nethound watch` draws: a header, the ports as a table, the selected one in detail, and
-// the keys. Pure: lines of text from the state, cut to the terminal's width.
+// the keys; or, on the map, what nethound map prints. Pure: lines of text from the state, cut to
+// the terminal's width.
 
+import { map } from "../analyze.ts";
 import {
+	cut,
+	ESC,
 	paint,
 	place,
 	placeParts,
 	type RenderOptions,
 	reachLabel,
+	renderMap,
 	tilde,
+	visibleLength,
 } from "../format.ts";
 import type { Process } from "../model.ts";
 import { startedBy } from "../stop.ts";
@@ -19,6 +25,8 @@ import {
 	type State,
 	selectedRow,
 	targets,
+	VIEWS,
+	type View,
 	visible,
 	webOf,
 } from "./state.ts";
@@ -44,6 +52,59 @@ export function scrolled(s: State, room: number): number {
 	if (at >= top + room) top = at - room + 1;
 	return Math.max(0, top);
 }
+
+const TITLE = "nethound watch";
+const TAB_LABELS: Record<View, string> = { ports: "Ports", map: "Map" };
+const tabLabels = () => VIEWS.map((v, i) => ` ${i + 1} ${TAB_LABELS[v]} `);
+
+/** The first line: the title, the tabs (the one shown inverted), what is shown, and on the right
+ * `right`. */
+function header(
+	s: State,
+	width: number,
+	o: RenderOptions,
+	info: string,
+	right: string,
+): string {
+	const c = paint(o);
+	const tabs = tabLabels()
+		.map((l, i) => (VIEWS[i] === s.view ? c.inverse(l) : c.dim(l)))
+		.join(" ");
+	const left = `${c.bold(TITLE)}  ${tabs}  ${s.snap ? `${c.cyan(s.snap.hostname)}  ` : ""}${c.dim(info)}`;
+	const gap = width - visibleLength(left) - visibleLength(right);
+	return cut(gap >= 2 ? left + " ".repeat(gap) + right : left, width);
+}
+
+/** The tab under column `x` of the first line, counted from 0. */
+export function tabAt(x: number): View | undefined {
+	let at = TITLE.length + 2;
+	for (const [i, l] of tabLabels().entries()) {
+		if (x >= at && x < at + l.length) return VIEWS[i];
+		at += l.length + 1;
+	}
+	return undefined;
+}
+
+/** Lines the map shows: what the header, the message and the keys leave. */
+export const mapRoom = (height: number) => Math.max(3, height - 3);
+
+/** The map as nethound map prints it, a line each, without its first (the hostname, which the
+ * header shows) and the blank line after it. */
+export function mapLines(s: State, width: number, o: RenderOptions): string[] {
+	if (!s.snap) return [];
+	return renderMap(map(s.snap), {
+		...o,
+		width,
+		wsl: s.snap.environment === "wsl",
+		windows: s.snap.environment === "windows",
+	})
+		.split("\n")
+		.slice(2);
+}
+
+/** The map's first line shown: where it was scrolled to, no further than its end allows. */
+export const mapScrolled = (s: State, lines: number, room: number) =>
+	Math.max(0, Math.min(s.mapTop, lines - room));
 
 /** "45s", "12m", "3h", "2d": how long ago `t` was. */
 export function age(t: number | undefined, now: number): string {
@@ -77,41 +138,12 @@ function whereCell(r: Row, w: number, o: RenderOptions, home?: string): string {
 	return `${c.cyan(cut(name, Math.max(4, w - tags.length - 1)))} ${tagged}`;
 }
 
-const ESC = "\x1b";
-
-/** Characters a terminal shows: colour codes (ESC [ … m) left out. */
-export function visibleLength(s: string): number {
-	let n = 0;
-	for (let i = 0; i < s.length; i++) {
-		if (s[i] === ESC) i = s.indexOf("m", i);
-		else n++;
-		if (i < 0) break;
-	}
-	return n;
-}
+export { cut, visibleLength };
 
 /** `s` without its colour codes. */
 const plain = (s: string) =>
 	s.replace(new RegExp(`${ESC}\\[[0-9;]*m`, "g"), "");
 
-/** `s` cut to `w` visible characters, its colour codes kept whole. */
-export function cut(s: string, w: number): string {
-	if (visibleLength(s) <= w) return s;
-	let out = "";
-	let shown = 0;
-	for (let i = 0; i < s.length && shown < w - 1; i++) {
-		if (s[i] === ESC) {
-			const end = s.indexOf("m", i);
-			out += s.slice(i, end + 1);
-			i = end;
-			continue;
-		}
-		out += s[i];
-		shown++;
-	}
-	// a cut colour is closed; plain text stays plain
-	return s.includes(ESC) ? `${out}…${ESC}[0m` : `${out}…`;
-}
 /** `s` in exactly `w` visible characters: cut, or padded with spaces. */
 const pad = (s: string, w: number) => {
 	const t = cut(s, w);
@@ -143,6 +175,13 @@ export function footer(s: State): Part[] {
 			{ key: "enter", label: "keep", press: { name: "return" } },
 			{ key: "esc", label: "clear", press: { name: "escape" } },
 		];
+	if (s.view === "map")
+		return [
+			{ key: "↑↓", label: "scroll" },
+			{ key: "tab", label: "ports", press: { name: "tab" } },
+			{ key: "r", label: "refresh", press: { ch: "r" } },
+			{ key: "q", label: "quit", press: { ch: "q" } },
+		];
 	const web = webOf(s, selectedRow(s));
 	return [
 		{ key: "↑↓", label: "select" },
@@ -154,6 +193,7 @@ export function footer(s: State): Part[] {
 		s.filter
 			? { key: "esc", label: "clear filter", press: { name: "escape" } }
 			: { key: "/", label: "filter", press: { ch: "/" } },
+		{ key: "tab", label: "map", press: { name: "tab" } },
 		{ key: "r", label: "refresh", press: { ch: "r" } },
 		{ key: "q", label: "quit", press: { ch: "q" } },
 	];
@@ -178,18 +218,24 @@ export function render(
 	height: number,
 	o: RenderOptions & { now: number; home?: string },
 ): string[] {
+	if (s.view === "map") return renderMapView(s, width, height, o);
 	const c = paint(o);
 	const rows = visible(s);
 	const sel = selectedRow(s);
 	const out: string[] = [];
 
-	// the header: what this is and where, and on the right how fresh it is
-	const left = s.snap
-		? `${c.bold("nethound watch")}  ${c.cyan(s.snap.hostname)}  ${c.dim(`${rows.length} port${rows.length === 1 ? "" : "s"}${s.filter ? ` matching "${s.filter}"` : ""}`)}`
-		: `${c.bold("nethound watch")}  ${c.dim("reading the machine…")}`;
-	const right = s.snap ? c.dim(`updated ${age(s.updated, o.now)} ago`) : "";
-	const gap = width - visibleLength(left) - visibleLength(right);
-	out.push(cut(gap >= 2 ? left + " ".repeat(gap) + right : left, width));
+	// the header: the tabs, where, and on the right how fresh it is
+	out.push(
+		header(
+			s,
+			width,
+			o,
+			s.snap
+				? `${rows.length} port${rows.length === 1 ? "" : "s"}${s.filter ? ` matching "${s.filter}"` : ""}`
+				: "reading the machine…",
+			s.snap ? c.dim(`updated ${age(s.updated, o.now)} ago`) : "",
+		),
+	);
 
 	// the table: as many rows as fit above the details, the selected one in view
 	const cells = rows.map((r) => {
@@ -278,9 +324,47 @@ export function render(
 	while (detail.length < DETAIL - 1) detail.push("");
 	out.push(...detail);
 
+	out.length = Math.min(out.length, Math.max(0, height - 2));
+	return [...out, ...bottom(s, width, height, o, out.length)];
+}
+
+/** The map, scrolled, under a header like the ports'. */
+function renderMapView(
+	s: State,
+	width: number,
+	height: number,
+	o: RenderOptions & { now: number },
+): string[] {
+	const c = paint(o);
+	const lines = mapLines(s, width, o);
+	const room = mapRoom(height);
+	const top = mapScrolled(s, lines.length, room);
+	const right = s.snap
+		? c.dim(
+				`${lines.length > room ? `${top + 1}–${Math.min(lines.length, top + room)} of ${lines.length}  ` : ""}updated ${age(s.updated, o.now)} ago`,
+			)
+		: "";
+	const out = [
+		header(s, width, o, s.snap ? "" : "reading the machine…", right),
+		...lines.slice(top, top + room).map((l) => cut(l, width)),
+	];
+	return [...out, ...bottom(s, width, height, o, out.length)];
+}
+
+/** The last two lines, the screen filled down to them: a message, and the keys. */
+function bottom(
+	s: State,
+	width: number,
+	height: number,
+	o: RenderOptions,
+	used: number,
+): string[] {
+	const c = paint(o);
+	const out: string[] = Array.from(
+		{ length: Math.max(0, height - 2 - used) },
+		() => "",
+	);
 	// a message on its own line, so the keys stay in sight
-	out.length = Math.max(0, height - 2);
-	while (out.length < height - 2) out.push("");
 	out.push(
 		s.message
 			? cut(

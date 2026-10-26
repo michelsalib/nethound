@@ -41,6 +41,13 @@
     ["fe80::/64", "::", "Ethernet", 281],
     ["ff00::/8", "::", "Ethernet", 281]
   ],
+  "neighbours": [
+    ["192.168.1.1", "50-39-2F-0A-4C-20", "Ethernet"],
+    ["192.168.1.25", "A0-6F-AA-4C-DF-02", "Ethernet"],
+    ["192.168.1.255", "FF-FF-FF-FF-FF-FF", "Ethernet"],
+    ["224.0.0.251", "01-00-5E-00-00-FB", "Ethernet"],
+    ["172.20.83.30", "00-15-5D-07-29-5F", "vEthernet (WSL (Hyper-V firewall))"]
+  ],
   "processes": [
     [0, "System Idle Process", null],
     [4, "System", null],

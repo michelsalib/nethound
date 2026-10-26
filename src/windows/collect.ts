@@ -1,7 +1,8 @@
 // Windows: one PowerShell call prints everything as JSON. Sockets and their processes from
 // Get-NetTCPConnection and Get-NetUDPEndpoint (their states are enum names, the same in every
 // language, where netstat translates them), interfaces from .NET's NetworkInterface (one fast
-// call for kind, state, addresses, traffic and DNS servers), routes from Get-NetRoute, command
+// call for kind, state, addresses, traffic and DNS servers), routes from Get-NetRoute, neighbours
+// from Get-NetNeighbor, command
 // lines from Win32_Process: without an administrator terminal, other users' are left out.
 
 import type {
@@ -10,13 +11,14 @@ import type {
 	FirewallProfile,
 	Iface,
 	IfaceKind,
+	Neighbour,
 	Process,
 	Route,
 	Snapshot,
 	Socket,
 	SocketState,
 } from "../model.ts";
-import { plainIP } from "../net.ts";
+import { neighbour, plainIP } from "../net.ts";
 import type { Run } from "../run.ts";
 
 export const SCRIPT = `
@@ -48,6 +50,10 @@ if ($firewall) {
     products = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName FirewallProduct | ForEach-Object { $_.displayName })
   }
 }
+$nb = $null
+if ($neighbours) {
+  $nb = @(Get-NetNeighbor -AddressFamily IPv4 | Where-Object { "$($_.State)" -notin 'Unreachable', 'Incomplete' } | ForEach-Object { ,@("$($_.IPAddress)", "$($_.LinkLayerAddress)", $_.InterfaceAlias) })
+}
 $g = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties()
 [ordered]@{
   tcp4 = @($g.GetActiveTcpListeners() | Where-Object { "$($_.Address)" -eq '0.0.0.0' } | ForEach-Object { $_.Port })
@@ -56,6 +62,7 @@ $g = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties()
   udp = @(Get-NetUDPEndpoint | ForEach-Object { ,@($_.LocalAddress, $_.LocalPort, $_.OwningProcess) })
   interfaces = @($ifaces)
   routes = @(Get-NetRoute | ForEach-Object { ,@($_.DestinationPrefix, $_.NextHop, $_.InterfaceAlias, ($_.RouteMetric + $_.InterfaceMetric)) })
+  neighbours = $nb
   processes = @(Get-CimInstance Win32_Process -Property ProcessId, Name, CommandLine, ParentProcessId, CreationDate, ExecutablePath | ForEach-Object { ,@($_.ProcessId, $_.Name, $_.CommandLine, $_.ParentProcessId, $(if ($_.CreationDate) { ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } else { 0 }), $_.ExecutablePath) })
   firewall = $fw
 } | ConvertTo-Json -Depth 5 -Compress
@@ -82,6 +89,8 @@ export interface WindowsData {
 		dns: string[];
 	}[];
 	routes?: [string, string, string, number][];
+	/** Asked for: IPv4 address, MAC (00-15-5D-0D-64-88), interface. */
+	neighbours?: [string, string, string][] | null;
 	/** pid, image name, command line, parent pid, start time (ms since the epoch, 0 unknown),
 	 * executable path. */
 	processes?: [
@@ -288,6 +297,12 @@ export function parseWindows(
 		environment: "windows",
 		interfaces,
 		routes,
+		...(data.neighbours && {
+			neighbours: data.neighbours.flatMap(([ip, mac, iface]): Neighbour[] => {
+				const n = neighbour(ip, mac, iface);
+				return n ? [n] : [];
+			}),
+		}),
 		sockets,
 		processes,
 		users: {},
@@ -348,8 +363,11 @@ export function parseFirewall(
 	};
 }
 
-export function collectWindows(run: Run, firewall = false) {
-	const script = firewall ? `$firewall = $true\n${SCRIPT}` : SCRIPT;
+export function collectWindows(run: Run, firewall = false, neighbours = false) {
+	const script =
+		(firewall ? "$firewall = $true\n" : "") +
+		(neighbours ? "$neighbours = $true\n" : "") +
+		SCRIPT;
 	const encoded = Buffer.from(script, "utf16le").toString("base64");
 	const out = run("powershell.exe", [
 		"-NoProfile",

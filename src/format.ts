@@ -15,7 +15,7 @@ import {
 import type { Finding } from "./doctor.ts";
 import { outside, verdictFor } from "./firewall.ts";
 import type { Container, Iface, Process, Route, Snapshot } from "./model.ts";
-import { endpoint, isLoopback, isWildcard } from "./net.ts";
+import { endpoint, isLinkLocal, isLoopback, isWildcard } from "./net.ts";
 import { startedBy } from "./stop.ts";
 
 export interface RenderOptions {
@@ -43,6 +43,38 @@ export function paint(o: RenderOptions) {
 		inverse: wrap("7"),
 		underline: wrap("4"),
 	};
+}
+
+export const ESC = "\x1b";
+
+/** Characters a terminal shows: colour codes (ESC [ … m) left out. */
+export function visibleLength(s: string): number {
+	let n = 0;
+	for (let i = 0; i < s.length; i++) {
+		if (s[i] === ESC) i = s.indexOf("m", i);
+		else n++;
+		if (i < 0) break;
+	}
+	return n;
+}
+
+/** `s` cut to `w` visible characters, its colour codes kept whole. */
+export function cut(s: string, w: number): string {
+	if (visibleLength(s) <= w) return s;
+	let out = "";
+	let shown = 0;
+	for (let i = 0; i < s.length && shown < w - 1; i++) {
+		if (s[i] === ESC) {
+			const end = s.indexOf("m", i);
+			out += s.slice(i, end + 1);
+			i = end;
+			continue;
+		}
+		out += s[i];
+		shown++;
+	}
+	// a cut colour is closed; plain text stays plain
+	return s.includes(ESC) ? `${out}…${ESC}[0m` : `${out}…`;
 }
 
 function fit(s: string, width: number | undefined): string {
@@ -243,9 +275,12 @@ const bytes = (n: number) => {
 	return `${i ? v.toFixed(1) : v} ${units[i]}`;
 };
 
-const cidr = (i: Iface) => i.addresses.map((a) => `${a.address}/${a.prefix}`);
-
-function ifaceHeader(i: Iface, o: RenderOptions, note = ""): string {
+function ifaceHeader(
+	i: Iface,
+	o: RenderOptions,
+	note = "",
+	addresses = i.addresses,
+): string {
 	const c = paint(o);
 	const state =
 		i.state === "up"
@@ -260,7 +295,7 @@ function ifaceHeader(i: Iface, o: RenderOptions, note = ""): string {
 		c.bold(i.name),
 		i.kind,
 		state,
-		cidr(i).join(" "),
+		addresses.map((a) => `${a.address}/${a.prefix}`).join(" "),
 		vpn && c.cyan(vpn),
 		note && c.dim(note),
 	]
@@ -292,9 +327,18 @@ const routeLabel = (r: Route) =>
 
 /** An interface's routes; a VPN's hundreds cut to the widest: "282 routes via 10.8.0.1:
  * 10.20.0.0/16, … and 276 more". */
-function routesText(rs: Route[]): string {
+function routesText(rs: Route[], width?: number): string {
 	const all = shownRoutes(rs);
-	const { shown, more } = widest(all);
+	// the widest that fit `width`
+	for (let max = 6; max > 1; max--) {
+		const text = routesOf(all, max);
+		if (!width || text.length <= width) return text;
+	}
+	return routesOf(all, 1);
+}
+
+function routesOf(all: Route[], max: number): string {
+	const { shown, more } = widest(all, max);
 	if (!more) return shown.map(routeLabel).join(", ");
 	// the routes a VPN pushes share its gateway: said once
 	const gateways = new Set(all.flatMap((r) => (r.gateway ? [r.gateway] : [])));
@@ -642,31 +686,46 @@ export function renderMap(m: MapReport, o: RenderOptions): string {
 		for (const l of m.everywhere) out.push(`  ${listenLine(l)}`);
 		out.push("");
 	}
+	// what each interface holds, a label in a column of its own: values start at the same place
+	const room = o.width && o.width - LABEL - 4;
+	const row = (label: string, color: (s: string) => string, text: string) =>
+		`  ${color(label.padEnd(LABEL))}  ${text}`;
 	for (const v of m.interfaces) {
 		const i = v.iface;
-		const net = dockerNetwork(v);
-		out.push(ifaceHeader(i, o, net));
+		out.push(mapHeader(i, o, dockerNetwork(v)));
 		if (shownRoutes(v.routes).length)
-			out.push(`  ${c.dim("routes")}  ${routesText(v.routes)}`);
-		for (const l of v.listeners)
-			out.push(`  ${c.green("listen")}  ${listenLine(l)}`);
+			out.push(row("routes", c.dim, routesText(v.routes, room)));
+		for (const [owner, ls] of byOwner(v.listeners, o))
+			out.push(row("listen", c.green, listenGroup(owner, ls, o)));
 		for (const x of v.containers)
 			out.push(
-				`  ${c.blue("holds")}   ${x.container.name}${x.ip ? ` ${x.ip}` : ""}${insidePorts(m.inside, x.container)}${portsOf(x.container)}`,
+				row(
+					"holds",
+					c.blue,
+					`${x.container.name}${x.ip ? ` ${x.ip}` : ""}${insidePorts(m.inside, x.container)}${portsOf(x.container)}`,
+				),
 			);
 		if (i.members.length)
-			out.push(
-				c
-					.dim(
-						`  ${i.members.length} port${i.members.length > 1 ? "s" : ""}: ${i.members.join(" ")}`,
-					)
-					.slice(0, o.width ?? Infinity),
-			);
-		out.push(...grouped(v.outbound, "out", o));
-		out.push(...grouped(v.local, "local", o));
+			out.push(row("ports", c.dim, c.dim(i.members.join(" "))));
+		if (v.neighbours.length)
+			out.push(row("neighbours", c.dim, neighboursText(v, room)));
+		for (const [who, to] of grouped(v.outbound, "out", o))
+			out.push(row("out", c.cyan, `${who} → ${to}`));
+		for (const [who, to] of grouped(v.local, "local", o))
+			out.push(row("local", c.magenta, `${who} → ${to}`));
 		out.push("");
 	}
-	if (m.idle.length) out.push(c.dim(`down, no address: ${m.idle.join(", ")}`));
+	if (m.idle.length) {
+		out.push(c.yellow("down"));
+		const w = Math.max(...m.idle.map((i) => i.name.length));
+		for (const i of m.idle) {
+			const purpose = PURPOSES.find(([re]) => re.test(i.description ?? ""));
+			out.push(
+				`  ${i.name.padEnd(w)}  ${c.dim(i.description ?? "")}${purpose ? `: ${purpose[1]}` : ""}`.trimEnd(),
+			);
+		}
+		out.push("");
+	}
 	// namespaces that are no container: ip netns', a sandbox's, rootless podman's
 	const others = m.inside.filter((x) => !x.container);
 	if (others.length) {
@@ -679,9 +738,24 @@ export function renderMap(m: MapReport, o: RenderOptions): string {
 		out.push("");
 	}
 	if (m.dns.length) {
-		out.push(
-			`${c.dim("dns")}  ${m.dns.map((d) => `${d.server} ${c.dim(d.route.kind === "loopback" || d.route.kind === "local" ? "(local resolver)" : routeVia(d.route))}`).join(", ")}`,
-		);
+		if (out.at(-1) !== "") out.push("");
+		out.push(c.yellow("dns servers"));
+		const w = Math.max(...m.dns.map((d) => d.server.length));
+		for (const d of m.dns)
+			out.push(`  ${d.server.padEnd(w)}  ${dnsWay(d.server, d.route, o)}`);
+		out.push("");
+	}
+	// Windows' own networks, which WSL behind its NAT doesn't see: the machines on them
+	if (m.windowsNeighbours?.length) {
+		if (out.at(-1) !== "") out.push("");
+		out.push(c.yellow("on Windows"));
+		for (const w of m.windowsNeighbours) {
+			out.push(
+				`${c.bold(w.iface.name)}  ${w.iface.addresses.map((a) => a.address).join(" ")}`,
+			);
+			out.push(row("neighbours", c.dim, neighboursText(w, room)));
+		}
+		out.push("");
 	}
 	for (const w of m.windowsVpns ?? []) {
 		out.push(
@@ -694,7 +768,97 @@ export function renderMap(m: MapReport, o: RenderOptions): string {
 				`${m.hidden} processes of other users hidden: ${elevate(o)} to see their sockets`,
 			),
 		);
-	return out.join("\n").trimEnd();
+	// every line on one line of the terminal: cut, never wrapped
+	return out
+		.map((l) => cut(l, o.width ?? Infinity))
+		.join("\n")
+		.trimEnd();
+}
+
+/** "192.168.1.1 gateway, 192.168.1.23 and 40 more": the gateway marked, as many as fit `width`. */
+function neighboursText(
+	v: Pick<IfaceView, "routes" | "neighbours">,
+	width?: number,
+): string {
+	const gateways = new Set(v.routes.flatMap((r) => r.gateway ?? []));
+	const all = v.neighbours.map((n) =>
+		gateways.has(n.address) ? `${n.address} gateway` : n.address,
+	);
+	let shown = all.length;
+	const text = (k: number) =>
+		all.slice(0, k).join(", ") +
+		(k < all.length ? ` and ${all.length - k} more` : "");
+	while (width && shown > 1 && text(shown).length > width) shown--;
+	return text(shown);
+}
+
+/** What a down adapter is for, by its description: Windows names them all "Connexion au réseau
+ * local* 3" or "Local Area Connection* 3". */
+const PURPOSES: [RegExp, string][] = [
+	[
+		/wi-fi direct/i,
+		"Mobile Hotspot, casting to a screen (Miracast), Nearby Sharing",
+	],
+	[/bluetooth/i, "a network over Bluetooth (tethering to a phone)"],
+];
+
+/** How a DNS server is reached, in words: "through eth0, gateway 172.20.80.1". */
+function dnsWay(server: string, r: RouteResult, o: RenderOptions): string {
+	const c = paint(o);
+	if (r.kind === "unreachable") return c.red("no route to it");
+	if (r.kind === "loopback" || r.kind === "local")
+		return server === "127.0.0.53"
+			? "on this machine: systemd-resolved, which asks the others"
+			: "on this machine";
+	if (r.kind === "container") return `container ${r.container?.name}`;
+	// fe80:: is on every interface: the route can't say which, the router that gave it is on one
+	if (isLinkLocal(server))
+		return "link-local: a router on the network that gave it";
+	const way =
+		r.kind === "network"
+			? `on ${r.iface}'s network`
+			: `through ${r.iface}, gateway ${r.gateway}`;
+	const vpn = r.vpn
+		? c.cyan(" (VPN)")
+		: r.windows?.vpn
+			? c.cyan(`, then Windows' VPN on ${r.windows.iface}`)
+			: "";
+	return way + vpn;
+}
+
+/** The width of the map's labels: "neighbours". */
+const LABEL = 10;
+
+/** An interface's line on the map: name, kind, state, then its addresses, IPv4 first, without the
+ * link-local ones every interface has (fe80::). */
+function mapHeader(i: Iface, o: RenderOptions, note: string): string {
+	const addresses = [
+		...i.addresses.filter((a) => a.family === 4),
+		...i.addresses.filter((a) => a.family === 6 && !isLinkLocal(a.address)),
+	];
+	return ifaceHeader(i, o, note, addresses);
+}
+
+/** An interface's listeners by what holds them: one line for System's dozen. */
+function byOwner(ls: Listener[], o: RenderOptions): Map<string, Listener[]> {
+	const by = new Map<string, Listener[]>();
+	for (const l of ls) {
+		const owner = ownerLabel(l, o);
+		by.set(owner, [...(by.get(owner) ?? []), l]);
+	}
+	return by;
+}
+
+/** "System 4  tcp 139 · udp 137 138  ← 2 clients": its ports by protocol, its clients counted. */
+function listenGroup(owner: string, ls: Listener[], o: RenderOptions): string {
+	const c = paint(o);
+	const ports = (["tcp", "udp"] as const)
+		.map((p) => ls.filter((l) => l.proto === p).map((l) => l.port))
+		.map((ps, i) => (ps.length ? `${i ? "udp" : "tcp"} ${ps.join(" ")}` : ""))
+		.filter(Boolean)
+		.join(" · ");
+	const clients = ls.reduce((n, l) => n + l.clients.length, 0);
+	return `${owner}  ${c.bold(ports)}${clients ? c.cyan(`  ← ${clients} client${clients > 1 ? "s" : ""}`) : ""}`;
 }
 
 /** What a container listens on, its loopback left out: "  listens 5432 udp 53". */
@@ -727,7 +891,7 @@ function grouped(
 	conns: Connection[],
 	label: "out" | "local",
 	o: RenderOptions,
-): string[] {
+): [string, string][] {
 	const c = paint(o);
 	const by = new Map<string, Map<string, number>>();
 	for (const x of conns) {
@@ -744,13 +908,10 @@ function grouped(
 		m.set(to, (m.get(to) ?? 0) + 1);
 		by.set(who, m);
 	}
-	const tag = label === "out" ? c.cyan("out") : c.magenta("local");
-	return [...by].map(([who, tos]) => {
-		const list = [...tos]
-			.map(([to, n]) => (n > 1 ? `${to} ×${n}` : to))
-			.join(", ");
-		return `  ${tag}${label === "out" ? "     " : "   "}${fit(`${who} → ${list}`, o.width && o.width - 10)}`;
-	});
+	return [...by].map(([who, tos]) => [
+		who,
+		[...tos].map(([to, n]) => (n > 1 ? `${to} ×${n}` : to)).join(", "),
+	]);
 }
 
 // --json: plain data, without the links between listeners and connections (they form cycles)
@@ -858,10 +1019,12 @@ export const ifaceViewJson = (v: IfaceView) => ({
 		...containerJson(x.container),
 		ip: x.ip,
 	})),
+	neighbours: v.neighbours,
 });
 
 export const mapJson = (m: MapReport) => ({
 	...m,
+	idle: m.idle.map((i) => i.name),
 	everywhere: m.everywhere.map(listenerJson),
 	interfaces: m.interfaces.map(ifaceViewJson),
 	dns: m.dns.map((d) => ({ server: d.server, route: routeJson(d.route) })),

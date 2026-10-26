@@ -1,13 +1,15 @@
 // macOS: no /proc, so its commands. Every socket of every user from `netstat -an`; the process
 // behind each from `lsof` (without root, only your own: other users' show no process, as on
 // Linux); interfaces from `ifconfig -a`, their traffic and index from `netstat -ibn`, which port is
-// Wi-Fi from `networksetup`; routes from `netstat -rn`; processes from `ps`.
+// Wi-Fi from `networksetup`; routes from `netstat -rn`; processes from `ps`; for nethound map,
+// neighbours from `arp -an`.
 
 import { basename } from "node:path";
 import type {
 	Family,
 	Iface,
 	IfaceKind,
+	Neighbour,
 	Process,
 	Proto,
 	Route,
@@ -15,7 +17,7 @@ import type {
 	Socket,
 	SocketState,
 } from "../model.ts";
-import { plainIP } from "../net.ts";
+import { neighbour, plainIP } from "../net.ts";
 import type { Run } from "../run.ts";
 
 const STATES: Record<string, SocketState> = {
@@ -331,6 +333,17 @@ export function parseNetstatRoutes(text: string): Route[] {
 		const { dest, prefix } = destination(d, family, flags.includes("H"));
 		const gateway = flags.includes("G") ? plainIP(gw).address : undefined;
 		out.push({ family, dest, prefix, gateway, iface, metric: 0 });
+	}
+	return out;
+}
+
+/** The IPv4 neighbour table from `arp -an` (-n: no name looked up): "? (192.168.1.1) at
+ * a4:91:b1:12:34:56 on en0 ifscope [ethernet]", MACs without leading zeros (1:0:5e:0:0:fb). */
+export function parseArpAn(text: string): Neighbour[] {
+	const out: Neighbour[] = [];
+	for (const m of text.matchAll(/\((\S+)\) at (\S+) on (\S+)/g)) {
+		const n = neighbour(m[1] ?? "", m[2] ?? "", m[3] ?? "");
+		if (n) out.push(n);
 	}
 	return out;
 }

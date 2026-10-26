@@ -2,6 +2,29 @@
 
 All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow [semantic versioning](https://semver.org).
 
+## Unreleased
+
+### Added
+
+- `map` lists, under each interface, the other machines on its network this one has exchanged
+  packets with lately, the gateway marked: `neighbours  192.168.1.1 gateway, 192.168.1.50`. They come
+  from the system's neighbour table (`/proc/net/arp`, `arp -an`, `Get-NetNeighbor`), IPv4 only;
+  nethound sends nothing to find them. `--json` adds each one's MAC address.
+- `watch` has tabs, as `envhound edit` does: `1 Ports` and `2 Map`, the map live (interfaces,
+  neighbours, connections, and Windows' side in WSL) and scrolled with the arrows and the wheel.
+  `tab` moves to the next, `1` and `2` pick one, a click on a tab shows it.
+- `map` in WSL lists the machines on Windows' networks too, from Windows' neighbour table: behind
+  WSL's NAT, WSL's own only holds Windows.
+
+### Changed
+
+- `map` is easier to read: its labels in a column of their own; one `listen` line per program, its
+  ports by protocol (`System 4  tcp 139 · udp 137 138`); no `fe80::` address in the headers, IPv4
+  first; lines cut to the terminal, never wrapped, routes cut to the widest that fit; a down adapter
+  with only link-local addresses (Windows' Wi-Fi Direct ones) folded under `down`, where each down
+  adapter shows its description and, for Wi-Fi Direct and Bluetooth, what it is for. The DNS
+  servers one per line, with how each is reached: `through eth0, gateway 172.20.80.1`.
+
 ## 0.10.0 (2026-10-22)
 
 ### Added

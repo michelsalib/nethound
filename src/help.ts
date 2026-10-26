@@ -110,7 +110,9 @@ how long it has been up and its clients; ports that just opened or closed are
 marked. Select one to see its command line, what started it (bun run dev, npm)
 and what stopping it would take, and its URL when it answers HTTP. Keys: arrows
 to select, o to open it in the browser, k to stop its process, K to stop it with
-what started it, / to filter (a branch, a port, a name), r to refresh, q to quit.
+what started it, / to filter (a branch, a port, a name), tab (or 1, 2) to switch
+tabs: the ports, and the map (what nethound map shows, live: interfaces,
+neighbours, connections), r to refresh, q to quit.
 A second k forces it (SIGKILL); a container is docker stopped. The mouse works
 too: click a port to select it, its URL to open it, the wheel to move, and the
 keys on the last line to press them (shift-drag still selects text).`,
@@ -162,8 +164,10 @@ that blocks it. Exits 1 when there are errors.`,
 		summary: "how everything connects, interface by interface",
 		about: `The whole picture: the ports open on every interface; then each interface with
 its routes, the ports bound to it, the containers behind it (and the ports each
-listens on inside, on Linux), and the connections leaving through it; on the
-loopback, which local process talks to which. Then what listens in other network
+listens on inside, on Linux), the other machines on its network this one has
+exchanged packets with (its neighbour table: nothing is sent to find them), and
+the connections leaving through it; on the loopback, which local process talks
+to which. In WSL, the machines on Windows' networks too. Then what listens in other network
 namespaces, and the DNS servers with the way to them.`,
 		options: ["json", "no-docker"],
 		examples: ["nethound map"],

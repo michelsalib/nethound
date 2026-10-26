@@ -6,11 +6,13 @@ import {
 	handleKey,
 	move,
 	type State,
+	scrollMap,
 	selectedRow,
+	showView,
 	visible,
 	webOf,
 } from "./state.ts";
-import { footerAt, TABLE_TOP, tableRoom } from "./view.ts";
+import { footerAt, TABLE_TOP, tabAt, tableRoom } from "./view.ts";
 
 /** Report clicks and the wheel, as ESC [ < button ; x ; y M (pressed) or m (released). */
 export const MOUSE_ON = "\x1b[?1000h\x1b[?1006h";
@@ -65,6 +67,7 @@ export function handleMouse(
 	const button = m.button & ~(4 | 8 | 16);
 	if (button === 64 || button === 65) {
 		if (s.confirm) return [s];
+		if (s.view === "map") return [scrollMap(s, button === 64 ? -WHEEL : WHEEL)];
 		return [move(s, button === 64 ? -WHEEL : WHEEL)];
 	}
 	if (button !== 0) return [s];
@@ -74,6 +77,11 @@ export function handleMouse(
 	}
 	// a question waits for its answer: clicking elsewhere neither answers nor dismisses it
 	if (s.confirm) return [s];
+	if (m.y === 0) {
+		const view = tabAt(m.x);
+		return view ? showView(s, view) : [s];
+	}
+	if (s.view === "map") return [s];
 	const room = tableRoom(height);
 	// the details' first line, under the rule: the URL, when there is one
 	const web = webOf(s, selectedRow(s));

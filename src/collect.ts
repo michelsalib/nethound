@@ -4,17 +4,22 @@
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { collectDarwin } from "./darwin/collect.ts";
+import { collectDarwin, parseArpAn } from "./darwin/collect.ts";
 import { readMacFirewall } from "./darwin/firewall.ts";
 import { readContainers } from "./docker.ts";
 import { checkoutOf } from "./git.ts";
 import { collectLinux } from "./linux/collect.ts";
 import { readLinuxFirewall } from "./linux/firewall.ts";
+import { readNeighbours } from "./linux/neighbours.ts";
 import type { Address, Container, Snapshot } from "./model.ts";
 import { annotate } from "./origin.ts";
 import { type Run, run as system } from "./run.ts";
 import { collectWindows } from "./windows/collect.ts";
-import { readWindowsPorts, readWindowsRouting } from "./wsl.ts";
+import {
+	parseNetshNeighbours,
+	readWindowsPorts,
+	readWindowsRouting,
+} from "./wsl.ts";
 
 export interface CollectOptions {
 	/** Default: the one nethound runs on. */
@@ -35,6 +40,8 @@ export interface CollectOptions {
 	windowsRouting?: boolean;
 	/** Also what the firewall lets in (nethound doctor and who). */
 	firewall?: boolean;
+	/** Also the neighbour table (nethound map). */
+	neighbours?: boolean;
 }
 
 export function collect(o: CollectOptions = {}): Snapshot {
@@ -45,10 +52,15 @@ export function collect(o: CollectOptions = {}): Snapshot {
 	const found = o.containers ?? readContainers();
 	const machine =
 		platform === "win32"
-			? collectWindows(run, o.firewall)
+			? collectWindows(run, o.firewall, o.neighbours)
 			: platform === "darwin"
 				? collectDarwin(run)
 				: collectLinux(root, o.addresses, found);
+	if (o.neighbours && platform !== "win32")
+		machine.neighbours =
+			platform === "darwin"
+				? parseArpAn(run("arp", ["-an"]))
+				: readNeighbours(join(root, "proc"));
 	if (o.firewall && platform !== "win32") {
 		const read = (p: string) => {
 			try {
@@ -90,6 +102,10 @@ export function collect(o: CollectOptions = {}): Snapshot {
 		o.windowsRouting && machine.environment === "wsl"
 			? readWindowsRouting(run)
 			: undefined;
+	if (o.neighbours && windowsRouting)
+		windowsRouting.neighbours = parseNetshNeighbours(
+			run("netsh.exe", ["interface", "ipv4", "show", "neighbors"]),
+		);
 	return {
 		hostname: o.hostname ?? hostname(),
 		...machine,
