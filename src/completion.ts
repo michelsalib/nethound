@@ -104,8 +104,9 @@ complete -c nethound -f -a '(nethound __complete (commandline -opc)[2..-1] (comm
 		// Windows PowerShell drops empty arguments to programs, so the word being typed goes first,
 		// behind a "_" that keeps it from being empty
 		case "powershell":
-			return `# nethound completion for PowerShell. Add to your profile (notepad $PROFILE):
-#   nethound completion powershell | Out-String | Invoke-Expression
+			return `# nethound completion for PowerShell. Save it next to your profile, and load it from there:
+#   nethound completion powershell > "$(Split-Path $PROFILE)\\nethound.ps1"
+#   Add-Content $PROFILE '. "$PSScriptRoot\\nethound.ps1"'
 Register-ArgumentCompleter -Native -CommandName nethound -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
     $before = @($commandAst.CommandElements | Select-Object -Skip 1 |
