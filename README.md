@@ -143,7 +143,7 @@ curl -fsSL https://github.com/michelsalib/nethound/releases/latest/download/inst
 To pin a version, or to read the script before running it:
 
 ```sh
-curl -fsSL https://github.com/michelsalib/nethound/releases/download/v0.11.0/install.sh -o install.sh
+curl -fsSL https://github.com/michelsalib/nethound/releases/download/v0.11.1/install.sh -o install.sh
 less install.sh && sh install.sh
 gh attestation verify install.sh -R michelsalib/nethound   # optional: proves GitHub Actions built it
 ```
@@ -162,7 +162,7 @@ scoop bucket add nethound https://github.com/michelsalib/scoop-nethound
 scoop install nethound/nethound                               # Scoop, Windows
 ```
 
-`install.sh` puts `nethound` in `~/.local/bin` (`NETHOUND_INSTALL_DIR` to change it, `NETHOUND_VERSION=0.11.0`
+`install.sh` puts `nethound` in `~/.local/bin` (`NETHOUND_INSTALL_DIR` to change it, `NETHOUND_VERSION=0.11.1`
 to pin a version), checks it against the release's `SHA256SUMS`, and runs it on Node, or on Bun when there
 is no Node ≥ 20. With neither, or with `NETHOUND_BINARY=1`, it installs the standalone binary for your
 system (Linux and macOS, x64 and arm64). `install.ps1` does the same on Windows, in
