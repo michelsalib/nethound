@@ -2,6 +2,14 @@
 
 All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow [semantic versioning](https://semver.org).
 
+## Unreleased
+
+### Changed
+
+- PowerShell completion is saved as `nethound.ps1` next to your profile and loaded from there, instead
+  of with `Out-String | Invoke-Expression`, which started nethound in every new shell and slowed down
+  the first one after a reboot. See the README for the two lines that replace the old one.
+
 ## 0.11.0 (2026-10-26)
 
 ### Added

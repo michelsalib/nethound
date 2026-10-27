@@ -226,11 +226,16 @@ eval "$(nethound completion zsh)"                                  # in ~/.zshrc
 nethound completion fish > ~/.config/fish/completions/nethound.fish
 ```
 
-In PowerShell, add this line to your profile (`notepad $PROFILE`):
+In PowerShell, save the script next to your profile, and load it from there:
 
 ```powershell
-nethound completion powershell | Out-String | Invoke-Expression
+nethound completion powershell > "$(Split-Path $PROFILE)\nethound.ps1"
+Add-Content $PROFILE '. "$PSScriptRoot\nethound.ps1"'
 ```
+
+The second line runs once; after an upgrade, rerun the first. Loading a saved script doesn't start nethound
+in every new shell, as the older `nethound completion powershell | Out-String | Invoke-Expression` line
+did, which was slow on the first shell after a reboot: replace that line if your profile has it.
 
 Completion is dynamic: on each <kbd>Tab</kbd> the script asks `nethound` for candidates, so `nethound kill <Tab>`
 and `nethound who <Tab>` offer the ports listening right now, each with what holds it:

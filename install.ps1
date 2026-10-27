@@ -93,8 +93,9 @@ $installed = & $exe --version
 $how = if ($runtime -eq 'binary') { 'standalone binary' } else { "runs on $runtime" }
 Write-Output "installed nethound $installed in $dir ($how)"
 Write-Output "to see the command lines of other users' processes too: run it from an administrator terminal"
-Write-Output 'PowerShell completion: add this line to your profile (notepad $PROFILE):'
-Write-Output '  nethound completion powershell | Out-String | Invoke-Expression'
+Write-Output 'PowerShell completion: save it next to your profile, and load it from there:'
+Write-Output '  nethound completion powershell > "$(Split-Path $PROFILE)\nethound.ps1"'
+Write-Output '  Add-Content $PROFILE ''. "$PSScriptRoot\nethound.ps1"'''
 
 $inPath = ($env:Path -split ';' | Where-Object { $_.TrimEnd('\') -eq $dir.TrimEnd('\') }).Count -gt 0
 if (-not $inPath) {
