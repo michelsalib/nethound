@@ -21,7 +21,7 @@
 		"type": "git",
 		"url": "git+https://github.com/michelsalib/nethound.git"
 	},
-	"homepage": "https://github.com/michelsalib/nethound#readme",
+	"homepage": "https://micheldev.com/nethound",
 	"bugs": "https://github.com/michelsalib/nethound/issues",
 	"type": "module",
 	"bin": {
