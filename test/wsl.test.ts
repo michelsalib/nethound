@@ -1,11 +1,18 @@
 import { expect, test } from "bun:test";
-import { connections, map, routeTo, throughWindows } from "../src/analyze.ts";
+import {
+	connections,
+	map,
+	routeTo,
+	throughWindows,
+	who,
+} from "../src/analyze.ts";
 import { collect } from "../src/collect.ts";
 import { doctor } from "../src/doctor.ts";
 import {
 	renderConnections,
 	renderMap,
 	renderRoute,
+	renderWho,
 	routeJson,
 } from "../src/format.ts";
 import type { Snapshot } from "../src/model.ts";
@@ -467,4 +474,65 @@ test("conns and map mark what goes through Windows' VPN", () => {
 		"→ 10.20.3.4:27017  via eth0 → 192.168.1.1 → Windows' VPN on Ethernet",
 	);
 	expect(renderMap(map(snap), o)).toContain("10.20.3.4:27017 (VPN)");
+});
+
+test("a Windows port a wslc container publishes is named after it, and who in WSL says so", () => {
+	const answers: Record<string, string> = {
+		// the dllhost on both loopbacks, another program beside it on the Wi-Fi address
+		"netstat.exe -ano -p TCP": [
+			"  TCP    127.0.0.1:18080        0.0.0.0:0              LISTENING       7028",
+			"  TCP    192.168.0.128:18080    0.0.0.0:0              LISTENING       555",
+		].join("\n"),
+		"netstat.exe -ano -p TCPv6":
+			"  TCP    [::1]:18080            [::]:0                 LISTENING       7028\n",
+		"tasklist.exe /fo csv /nh": [
+			`"dllhost.exe","7028","Console","1","9 120 Ko"`,
+			`"other.exe","555","Console","1","9 120 Ko"`,
+		].join("\n"),
+		"wslc.exe ps -q": "6d098459b813\n",
+		"wslc.exe inspect 6d098459b813": JSON.stringify([
+			{
+				Id: "6d098459b813",
+				Name: "/web-test",
+				Ports: { "8000/tcp": [{ HostIp: "0.0.0.0", HostPort: "18080" }] },
+			},
+		]),
+	};
+	const asked: string[] = [];
+	const run = (cmd: string, args: string[]) => {
+		asked.push(cmd);
+		return answers[[cmd, ...args].join(" ")] ?? "";
+	};
+	const windowsPorts = readWindowsPorts(run);
+	expect(windowsPorts).toEqual([
+		{
+			address: "127.0.0.1",
+			port: 18080,
+			pid: 7028,
+			name: "dllhost",
+			container: "web-test",
+		},
+		{ address: "192.168.0.128", port: 18080, pid: 555, name: "other" },
+		{
+			address: "::1",
+			port: 18080,
+			pid: 7028,
+			name: "dllhost",
+			container: "web-test",
+		},
+	]);
+	const snap = { ...fixture(), environment: "wsl" as const };
+	expect(renderWho(who(snap, 18080), { color: false, windowsPorts })).toBe(
+		[
+			"nothing in WSL listens on port 18080; Windows does:",
+			"  container web-test (wslc)  on 127.0.0.1, ::1",
+			"  other 555  on 192.168.0.128",
+		].join("\n"),
+	);
+	// no dllhost listening: wslc is not asked
+	answers["tasklist.exe /fo csv /nh"] =
+		`"other.exe","7028","Console","1","9 120 Ko"`;
+	asked.length = 0;
+	readWindowsPorts(run);
+	expect(asked).not.toContain("wslc.exe");
 });

@@ -1,8 +1,10 @@
 // Running containers, from `docker inspect`: their networks (and the host bridge each one uses)
-// and the ports they publish. Skipped quietly when docker is missing or not running.
+// and the ports they publish. Skipped quietly when docker is missing or not running. On Windows,
+// WSL's own containers too, from `wslc inspect`, which answers the same way.
 
 import { spawnSync } from "node:child_process";
 import type { Container, Proto, PublishedPort } from "./model.ts";
+import type { Run } from "./run.ts";
 
 interface Inspect {
 	Id?: string;
@@ -19,10 +21,15 @@ interface Inspect {
 			{ HostIp?: string; HostPort?: string }[] | null
 		> | null;
 	};
+	/** wslc keeps them here, not in NetworkSettings. */
+	Ports?: Record<
+		string,
+		{ HostIp?: string; HostPort?: string }[] | null
+	> | null;
 }
 
-/** Containers from the JSON array `docker inspect` prints. */
-export function parseInspect(json: string): Container[] {
+/** Containers from the JSON array `docker inspect` (or `wslc inspect`) prints. */
+export function parseInspect(json: string, cli?: "wslc"): Container[] {
 	let data: Inspect[];
 	try {
 		data = JSON.parse(json);
@@ -31,7 +38,9 @@ export function parseInspect(json: string): Container[] {
 	}
 	return data.map((c) => {
 		const ports: PublishedPort[] = [];
-		for (const [key, binds] of Object.entries(c.NetworkSettings?.Ports ?? {})) {
+		for (const [key, binds] of Object.entries(
+			(cli ? c.Ports : c.NetworkSettings?.Ports) ?? {},
+		)) {
 			const [port = "0", proto = "tcp"] = key.split("/");
 			for (const b of binds ?? [])
 				ports.push({
@@ -61,6 +70,7 @@ export function parseInspect(json: string): Container[] {
 			),
 			ports,
 			...(c.State?.Pid && { pid: c.State.Pid }),
+			...(cli && { cli }),
 		};
 	});
 }
@@ -73,3 +83,14 @@ export function readContainers(): Container[] {
 	const inspect = run(["inspect", ...ps.stdout.trim().split(/\s+/)]);
 	return inspect.status === 0 ? parseInspect(inspect.stdout) : [];
 }
+
+/** WSL's own containers: wslc on Windows, wslc.exe from WSL. */
+export function readWslc(run: Run, exe = "wslc"): Container[] {
+	const ids = run(exe, ["ps", "-q"]).trim();
+	return ids
+		? parseInspect(run(exe, ["inspect", ...ids.split(/\s+/)]), "wslc")
+		: [];
+}
+
+/** The command that stops it: docker, or wslc for WSL's own containers. */
+export const cliOf = (c: Container) => c.cli ?? "docker";

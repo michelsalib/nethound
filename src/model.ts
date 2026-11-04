@@ -163,6 +163,8 @@ export interface Container {
 	ports: PublishedPort[];
 	/** Linux: its first process, whose /proc/PID/net shows the container's own sockets. */
 	pid?: number;
+	/** Windows: run by WSL (wslc), not docker. */
+	cli?: "wslc";
 }
 
 /** A network namespace other than nethound's: a container's, one of ip netns', rootless podman's. */
@@ -313,6 +315,8 @@ export interface WindowsPort {
 	name?: string;
 	/** `netsh interface portproxy` forwards it: to WSL, most of the time. */
 	proxy?: boolean;
+	/** The wslc container that publishes it (WSL's own containers, held by a dllhost). */
+	container?: string;
 }
 
 export interface Snapshot {

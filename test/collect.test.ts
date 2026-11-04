@@ -151,6 +151,36 @@ test("docker inspect: networks, their bridge, published ports", () => {
 	expect(parseInspect("not json")).toEqual([]);
 });
 
+test("wslc inspect keeps the published ports at the top level", () => {
+	const [c] = parseInspect(
+		JSON.stringify([
+			{
+				Id: "6d098459b81325d23321d1528be477eb643dcfb139601f36959dde0d79c1ee9a",
+				Name: "/web-test",
+				Config: { Image: "crccheck/hello-world" },
+				NetworkSettings: {
+					Networks: { bridge: { IPAddress: "172.17.0.2" } },
+				},
+				Ports: { "8000/tcp": [{ HostIp: "127.0.0.1", HostPort: "8080" }] },
+			},
+		]),
+		"wslc",
+	);
+	expect(c).toMatchObject({
+		id: "6d098459b813",
+		name: "web-test",
+		cli: "wslc",
+		ports: [
+			{
+				proto: "tcp",
+				hostIp: "127.0.0.1",
+				hostPort: 8080,
+				containerPort: 8000,
+			},
+		],
+	});
+});
+
 test("WSL is told by its own files, not by its kernel alone: a container on it is no WSL", () => {
 	const root = mkdtempSync(join(tmpdir(), "nethound-wsl-"));
 	try {

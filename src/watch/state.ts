@@ -2,7 +2,8 @@
 // functions, so the terminal driver only draws and runs effects.
 
 import { type Listener, listeners } from "../analyze.ts";
-import type { Process, Snapshot } from "../model.ts";
+import { cliOf } from "../docker.ts";
+import type { Container, Process, Snapshot } from "../model.ts";
 import { treeOf } from "../stop.ts";
 import { unchecked, type Web } from "../web.ts";
 
@@ -24,8 +25,8 @@ export interface Confirm {
 	question: string;
 	pids: number[];
 	force: boolean;
-	/** A container to stop with docker instead of processes. */
-	container?: string;
+	/** A container to stop with docker (or wslc) instead of processes. */
+	container?: Container;
 }
 
 export interface State {
@@ -80,7 +81,7 @@ export type Effect =
 	| { kind: "quit" }
 	| { kind: "refresh" }
 	| { kind: "stop"; pids: number[]; force: boolean }
-	| { kind: "docker-stop"; container: string }
+	| { kind: "container-stop"; container: Container }
 	| { kind: "open"; url: string; row: Row };
 
 export const initialState = (self = process.pid, probe = true): State => ({
@@ -198,20 +199,20 @@ function askStop(s: State, r: Row, tree: boolean): State {
 		return {
 			...s,
 			confirm: {
-				question: `stop container ${l.container.name} (docker stop)?`,
+				question: `stop container ${l.container.name} (${cliOf(l.container)} stop)?`,
 				pids: [],
 				force: false,
-				container: l.container.name,
+				container: l.container,
 			},
 		};
 	if (l.container)
 		return {
 			...s,
 			confirm: {
-				question: `${l.port} is container ${l.container.name}'s: docker stop it?`,
+				question: `${l.port} is container ${l.container.name}'s: ${cliOf(l.container)} stop it?`,
 				pids: [],
 				force: false,
-				container: l.container.name,
+				container: l.container,
 			},
 		};
 	if (!l.process)
@@ -323,7 +324,7 @@ export function handleKey(s: State, k: Key): [State, Effect?] {
 					: [...new Set([...s.signalled, ...c.pids])],
 			};
 			return c.container
-				? [next, { kind: "docker-stop", container: c.container }]
+				? [next, { kind: "container-stop", container: c.container }]
 				: [next, { kind: "stop", pids: c.pids, force: c.force }];
 		}
 		return [{ ...s, confirm: undefined, message: { text: "nothing stopped" } }];

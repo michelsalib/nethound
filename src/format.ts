@@ -14,7 +14,14 @@ import {
 } from "./analyze.ts";
 import type { Finding } from "./doctor.ts";
 import { outside, verdictFor } from "./firewall.ts";
-import type { Container, Iface, Process, Route, Snapshot } from "./model.ts";
+import type {
+	Container,
+	Iface,
+	Process,
+	Route,
+	Snapshot,
+	WindowsPort,
+} from "./model.ts";
 import { endpoint, isLinkLocal, isLoopback, isWildcard } from "./net.ts";
 import { startedBy } from "./stop.ts";
 
@@ -444,13 +451,32 @@ export function renderConnections(
 
 export function renderWho(
 	r: WhoReport,
-	o: RenderOptions & { home?: string; now?: number },
+	o: RenderOptions & {
+		home?: string;
+		now?: number;
+		/** In WSL, when nothing here has the port: what Windows holds on it. */
+		windowsPorts?: WindowsPort[];
+	},
 	snap?: Snapshot,
 ): string {
 	const c = paint(o);
 	const out: string[] = [];
-	if (!r.listeners.length && !r.outbound.length && !r.inside.length)
-		return `nothing listens on port ${r.port}, and nothing here talks to it`;
+	if (!r.listeners.length && !r.outbound.length && !r.inside.length) {
+		if (!o.windowsPorts?.length)
+			return `nothing listens on port ${r.port}, and nothing here talks to it`;
+		// a wslc container, or a program of Windows' own, with each of its addresses
+		const holders = new Map<string, string[]>();
+		for (const w of o.windowsPorts) {
+			const who = w.container
+				? `container ${c.bold(w.container)} ${c.dim("(wslc)")}`
+				: c.bold(`${w.name ?? "pid"} ${w.pid}`);
+			holders.set(who, [...(holders.get(who) ?? []), w.address]);
+		}
+		return [
+			`nothing in WSL listens on port ${r.port}; Windows does:`,
+			...[...holders].map(([who, at]) => `  ${who}  on ${at.join(", ")}`),
+		].join("\n");
+	}
 	for (const l of r.listeners) {
 		out.push(`${c.bold(`${l.proto} ${l.port}`)}  ${ownerLabel(l, o)}`);
 		const kv: [string, string][] = [];
@@ -642,6 +668,22 @@ export function renderRoute(
 	}
 	const lines = (r: RouteResult) => {
 		const kv: [string, string][] = [];
+		// Docker Desktop's and wslc's networks are in their VM, rootless docker's in its namespace:
+		// no route here reaches them, only the ports they publish
+		if (
+			r.kind === "container" &&
+			r.container &&
+			!r.container.networks.find((n) => n.ip === r.dest)?.bridge
+		) {
+			kv.push([
+				"is",
+				`container ${r.container.name}, not on this machine's networks: unreachable from here`,
+			]);
+			const ports = published(r.container);
+			if (ports.length)
+				kv.push(["reach it", `through this machine's ${ports.join(" ")}`]);
+			return kv.map(([k, v]) => `  ${c.dim(k.padEnd(10))} ${v}`);
+		}
 		if (r.kind === "container")
 			kv.push(["is", `container ${r.container?.name}, on this machine`]);
 		else if (r.kind === "network")
@@ -875,15 +917,23 @@ function insidePorts(all: InsideListener[], ct: Container): string {
 	return ports.length ? `  listens ${ports.join(" ")}` : "";
 }
 
+/** Its published ports, once each (docker publishes most on 0.0.0.0 and ::): ":8080→80". */
+function published(ct: Container): string[] {
+	return ct.ports
+		.filter(
+			(x, i, a) =>
+				a.findIndex((y) => y.hostPort === x.hostPort && y.proto === x.proto) ===
+				i,
+		)
+		.map(
+			(x) =>
+				`:${x.hostPort}${x.hostPort !== x.containerPort ? `→${x.containerPort}` : ""}`,
+		);
+}
+
 function portsOf(ct: Container): string {
-	const p = ct.ports.filter(
-		(x, i, a) =>
-			a.findIndex((y) => y.hostPort === x.hostPort && y.proto === x.proto) ===
-			i,
-	);
-	return p.length
-		? `  ← host ${p.map((x) => `:${x.hostPort}${x.hostPort !== x.containerPort ? `→${x.containerPort}` : ""}`).join(" ")}`
-		: "";
+	const p = published(ct);
+	return p.length ? `  ← host ${p.join(" ")}` : "";
 }
 
 /** Connections per process, remote ends listed once each, for the map. */

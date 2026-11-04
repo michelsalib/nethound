@@ -6,7 +6,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { collectDarwin, parseArpAn } from "./darwin/collect.ts";
 import { readMacFirewall } from "./darwin/firewall.ts";
-import { readContainers } from "./docker.ts";
+import { readContainers, readWslc } from "./docker.ts";
 import { checkoutOf } from "./git.ts";
 import { collectLinux } from "./linux/collect.ts";
 import { readLinuxFirewall } from "./linux/firewall.ts";
@@ -30,7 +30,7 @@ export interface CollectOptions {
 	addresses?: Record<string, Address[]>;
 	/** macOS and Windows: runs their commands; tests pass recorded output. */
 	run?: Run;
-	/** Containers; default from `docker inspect`. */
+	/** Containers; default from `docker inspect` (and `wslc inspect` on Windows). */
 	containers?: Container[];
 	uid?: number;
 	hostname?: string;
@@ -49,7 +49,11 @@ export function collect(o: CollectOptions = {}): Snapshot {
 	const run = o.run ?? system;
 	const root = o.root ?? "/";
 	const uid = o.uid ?? process.getuid?.();
-	const found = o.containers ?? readContainers();
+	const found =
+		o.containers ??
+		(platform === "win32"
+			? [...readContainers(), ...readWslc(run)]
+			: readContainers());
 	const machine =
 		platform === "win32"
 			? collectWindows(run, o.firewall, o.neighbours)

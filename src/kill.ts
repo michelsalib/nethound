@@ -5,8 +5,9 @@ import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { who } from "./analyze.ts";
+import { cliOf } from "./docker.ts";
 import { paint, place, type RenderOptions } from "./format.ts";
-import type { Process, Snapshot } from "./model.ts";
+import type { Container, Process, Snapshot } from "./model.ts";
 import { alive, startedBy, stop, treeOf } from "./stop.ts";
 
 export interface KillOptions {
@@ -34,7 +35,7 @@ export async function killPort(
 		return 1;
 	}
 	const pids = new Set<number>();
-	const containers = new Set<string>();
+	const containers = new Map<string, Container>();
 	const plan: string[] = [];
 	let unreachable = 0;
 	const describe = (p: Process) => {
@@ -44,9 +45,9 @@ export async function killPort(
 	for (const l of ls) {
 		const on = c.dim(`${l.proto} ${l.port}`);
 		if (l.container) {
-			containers.add(l.container.name);
+			containers.set(l.container.id, l.container);
 			plan.push(
-				`${on}  container ${c.bold(l.container.name)}  ${c.dim(`docker stop ${l.container.name}`)}`,
+				`${on}  container ${c.bold(l.container.name)}  ${c.dim(`${cliOf(l.container)} stop ${l.container.name}`)}`,
 			);
 		} else if (l.process) {
 			const ps = o.tree ? treeOf(snap, l.process.pid) : [l.process];
@@ -75,7 +76,7 @@ export async function killPort(
 			output: process.stdout,
 		});
 		const answer = await rl.question(
-			`${o.force ? "force-stop (SIGKILL)" : "stop"} ${[...pids, ...containers].length === 1 ? "it" : "them"}? [y/N] `,
+			`${o.force ? "force-stop (SIGKILL)" : "stop"} ${pids.size + containers.size === 1 ? "it" : "them"}? [y/N] `,
 		);
 		rl.close();
 		if (!/^y(es)?$/i.test(answer.trim())) {
@@ -95,15 +96,17 @@ export async function killPort(
 			console.error(`${r.pid}: ${r.error}`);
 		}
 	}
-	for (const name of containers) {
-		const r = spawnSync("docker", ["stop", name], {
+	for (const container of containers.values()) {
+		const { name } = container;
+		const cli = cliOf(container);
+		const r = spawnSync(cli, ["stop", name], {
 			stdio: "ignore",
 			windowsHide: true,
 		});
 		if (r.status === 0) console.log(`stopped container ${name}`);
 		else {
 			failed++;
-			console.error(`docker stop ${name} failed`);
+			console.error(`${cli} stop ${name} failed`);
 		}
 	}
 	// a stopped server takes a moment to close: up to 3 s
