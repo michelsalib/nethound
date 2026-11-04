@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         # each OS has its own collector; arm64 Linux runs its own binary
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, windows-latest]
         node: [24]
         # the oldest Node versions engines allows run the built file too
         include:
