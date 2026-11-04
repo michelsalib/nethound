@@ -2,6 +2,21 @@
 
 All notable changes to nethound (called netbeagle up to 0.7.0). Versions follow [semantic versioning](https://semver.org).
 
+## 0.12.0 (2026-11-04)
+
+### Added
+
+- Windows: WSL's own containers (`wslc`). A port a wslc container publishes shows the container, its
+  image and its address in the VM, instead of a bare `dllhost`; the `dllhost` that hosts them is shown
+  as `wslc`. `kill` and `watch` stop them with `wslc stop`.
+- WSL: `who PORT`, when nothing in WSL has `PORT`, says what Windows holds on it, a wslc container by
+  its name. `doctor`'s "localhost in Windows reaches …, not … in WSL" names the wslc container too.
+
+### Fixed
+
+- `route` to a container in Docker Desktop's or wslc's VM said it was on this machine, through the
+  default route. It now says it is unreachable from here, and through which published ports to reach it.
+
 ## 0.11.1 (2026-10-27)
 
 ### Changed
