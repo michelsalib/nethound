@@ -4,8 +4,9 @@
 // answer in half a second, where PowerShell takes several.
 
 import { isIP } from "node:net";
+import { readWslc } from "./docker.ts";
 import type { Neighbour, Snapshot, WindowsPort } from "./model.ts";
-import { neighbour, plainIP } from "./net.ts";
+import { isWildcard, neighbour, plainIP } from "./net.ts";
 import type { Run } from "./run.ts";
 import { kindOf } from "./windows/collect.ts";
 
@@ -60,11 +61,26 @@ export function readWindowsPorts(run: Run): WindowsPort[] | undefined {
 	const proxied = parsePortProxy(
 		run("netsh.exe", ["interface", "portproxy", "show", "all"]),
 	);
-	return parseNetstatListeners(netstat).map((p) => ({
+	const ports = parseNetstatListeners(netstat).map((p) => ({
 		...p,
 		name: names.get(p.pid),
 		...(proxied.has(p.port) && { proxy: true }),
 	}));
+	// wslc's containers publish through a dllhost: worth asking wslc only when one listens
+	const dllhost = (p: WindowsPort) => p.name?.toLowerCase() === "dllhost";
+	const wslc = ports.some(dllhost) ? readWslc(run, "wslc.exe") : [];
+	return ports.map((p) => {
+		if (!dllhost(p)) return p;
+		const c = wslc.find((c) =>
+			c.ports.some(
+				(q) =>
+					q.proto === "tcp" &&
+					q.hostPort === p.port &&
+					(q.hostIp === p.address || isWildcard(q.hostIp)),
+			),
+		);
+		return c ? { ...p, container: c.name } : p;
+	});
 }
 
 /** Interfaces from `netsh interface ipv4 show interfaces`: index, metric, MTU, state, name. The

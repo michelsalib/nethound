@@ -7,6 +7,7 @@ import { execFile, spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { emitKeypressEvents } from "node:readline";
 import { PassThrough } from "node:stream";
+import { cliOf } from "../docker.ts";
 import type { Snapshot } from "../model.ts";
 import { alive, stop } from "../stop.ts";
 import { compiled } from "../update.ts";
@@ -226,12 +227,14 @@ export function runWatch(o: WatchOptions): Promise<void> {
 					});
 					return;
 				}
-				case "docker-stop": {
+				case "container-stop": {
+					const cli = cliOf(effect.container);
+					const name = effect.container.name;
 					state = {
 						...state,
-						message: { text: `docker stop ${effect.container}…` },
+						message: { text: `${cli} stop ${name}…` },
 					};
-					const child = spawn("docker", ["stop", effect.container], {
+					const child = spawn(cli, ["stop", name], {
 						stdio: "ignore",
 						windowsHide: true,
 					});
@@ -239,7 +242,7 @@ export function runWatch(o: WatchOptions): Promise<void> {
 						state = {
 							...state,
 							message: {
-								text: `could not run docker: ${e.message}`,
+								text: `could not run ${cli}: ${e.message}`,
 								error: true,
 							},
 						};
@@ -250,9 +253,9 @@ export function runWatch(o: WatchOptions): Promise<void> {
 							...state,
 							message:
 								code === 0
-									? { text: `stopped container ${effect.container}` }
+									? { text: `stopped container ${name}` }
 									: {
-											text: `docker stop ${effect.container} failed (exit ${code})`,
+											text: `${cli} stop ${name} failed (exit ${code})`,
 											error: true,
 										},
 						};

@@ -1,7 +1,11 @@
 // Windows, from what nethound's PowerShell script prints: test/fixtures/windows.
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { connections, listeners, routeTo, unowned } from "../src/analyze.ts";
 import { ownerLabel } from "../src/format.ts";
+import type { Container } from "../src/model.ts";
+import { parseWindows, type WindowsData } from "../src/windows/collect.ts";
 import { windowsFixture } from "./helpers.ts";
 
 const snap = windowsFixture();
@@ -147,4 +151,52 @@ test("processes: their parent and start time, from Win32_Process", () => {
 	});
 	// pid 0 and System have neither
 	expect(snap.processes.find((p) => p.pid === 4)?.ppid).toBeUndefined();
+});
+
+test("WSL's dllhost is wslc, and the port it holds for a wslc container is that container's", () => {
+	const data: WindowsData = JSON.parse(
+		readFileSync(
+			join(import.meta.dir, "fixtures/windows/snapshot.json"),
+			"utf8",
+		),
+	);
+	// what listens on 8080 in the fixture becomes WSL's container host
+	data.processes = data.processes?.map((p) =>
+		p[0] === 3000
+			? [
+					3000,
+					"dllhost.exe",
+					"C:\\WINDOWS\\system32\\DllHost.exe /Processid:{17696eac-9568-4cf5-bb8c-82515aad6c09}",
+					2900,
+					1760000600000,
+				]
+			: p,
+	);
+	const machine = parseWindows(data);
+	expect(machine.processes.find((p) => p.pid === 3000)?.name).toBe("wslc");
+	const s8080 = machine.sockets.find(
+		(s) => s.proto === "tcp" && s.local.port === 8080,
+	);
+	const container: Container = {
+		id: "6d098459b813",
+		name: "web-test",
+		image: "crccheck/hello-world",
+		networks: [],
+		ports: [
+			{
+				proto: "tcp",
+				hostIp: s8080?.local.address ?? "",
+				hostPort: 8080,
+				containerPort: 8000,
+			},
+		],
+		cli: "wslc",
+	};
+	const l = listeners({
+		...machine,
+		hostname: "win",
+		containers: [container],
+	}).find((l) => l.port === 8080);
+	expect(l?.container?.name).toBe("web-test");
+	expect(l?.published?.containerPort).toBe(8000);
 });

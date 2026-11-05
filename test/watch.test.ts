@@ -107,12 +107,23 @@ test("k asks before stopping the process; K takes what started it; a second k fo
 	expect(s.confirm?.pids).toEqual([250, 300]);
 });
 
-test("a container is docker stopped; another user's process can't be", () => {
+test("a container is stopped with its CLI; another user's process can't be", () => {
 	let s = applySnapshot(initialState(999), fixture([pg]), 0);
 	[s] = keys(s, "/", "5432", "return", "k");
-	expect(s.confirm?.container).toBe("pg");
+	expect(s.confirm?.container?.name).toBe("pg");
 	const [, effect] = keys(s, "y");
-	expect(effect).toEqual({ kind: "docker-stop", container: "pg" });
+	expect(effect).toMatchObject({
+		kind: "container-stop",
+		container: { name: "pg" },
+	});
+	// WSL's own containers are stopped with wslc
+	let w = applySnapshot(
+		initialState(999),
+		fixture([{ ...pg, cli: "wslc" }]),
+		0,
+	);
+	[w] = keys(w, "/", "5432", "return", "k");
+	expect(w.confirm?.question).toBe("stop container pg (wslc stop)?");
 	let t = applySnapshot(initialState(999), base, 0);
 	[t] = keys(t, "/", "tcp 22", "return", "k");
 	expect(t.confirm).toBeUndefined();

@@ -165,6 +165,21 @@ test("route", () => {
 	expect(renderRoute(routeTo(snap, "172.18.0.2"), "172.18.0.2", o)).toContain(
 		"container pg, on this machine",
 	);
+	// Docker Desktop's or wslc's: its network is in their VM, with no bridge here
+	const vm = {
+		...snap,
+		containers: snap.containers.map((c) => ({
+			...c,
+			networks: c.networks.map((n) => ({ ...n, bridge: undefined })),
+		})),
+	};
+	expect(renderRoute(routeTo(vm, "172.18.0.2"), "172.18.0.2", o)).toBe(
+		[
+			"172.18.0.2",
+			"  is         container pg, not on this machine's networks: unreachable from here",
+			"  reach it   through this machine's :5432",
+		].join("\n"),
+	);
 });
 
 test("JSON has no cycles between listeners and their clients", () => {

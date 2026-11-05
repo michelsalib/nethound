@@ -67,7 +67,7 @@ import {
 	upgradeCommand,
 } from "./update.ts";
 import { runWatch } from "./watch/terminal.ts";
-import { parseNslookup } from "./wsl.ts";
+import { parseNslookup, readWindowsPorts } from "./wsl.ts";
 
 const TAGLINE =
 	"see what listens on each port, who reaches it, and how everything connects";
@@ -265,17 +265,29 @@ async function main(argv: string[]): Promise<number> {
 			if (!args[0] || !Number.isInteger(port) || port < 1 || port > 65535)
 				return usage("who takes a port number, e.g. nethound who 5432");
 			const r = who(snap, port);
+			const found = r.listeners.length || r.outbound.length || r.inside.length;
+			// in WSL, when nothing here has it: what Windows holds on it
+			const windows =
+				!found && snap.environment === "wsl"
+					? (readWindowsPorts(run) ?? []).filter((w) => w.port === port)
+					: [];
 			print(
-				() => renderWho(r, { ...opts, home: homedir() }, snap),
+				() =>
+					renderWho(
+						r,
+						{ ...opts, home: homedir(), windowsPorts: windows },
+						snap,
+					),
 				() => ({
 					port,
 					listeners: r.listeners.map(listenerJson),
 					inside: r.inside.map(insideJson),
 					outbound: r.outbound.map(connectionJson),
 					relayed: r.relayed.map(connectionJson),
+					...(windows.length && { windows }),
 				}),
 			);
-			return r.listeners.length || r.outbound.length || r.inside.length ? 0 : 1;
+			return found || windows.length ? 0 : 1;
 		}
 		case "conns": {
 			const cs = connections(snap)

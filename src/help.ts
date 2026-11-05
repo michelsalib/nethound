@@ -113,7 +113,7 @@ to select, o to open it in the browser, k to stop its process, K to stop it with
 what started it, / to filter (a branch, a port, a name), tab (or 1, 2) to switch
 tabs: the ports, and the map (what nethound map shows, live: interfaces,
 neighbours, connections), r to refresh, q to quit.
-A second k forces it (SIGKILL); a container is docker stopped. The mouse works
+A second k forces it (SIGKILL); a container is docker (or wslc) stopped. The mouse works
 too: click a port to select it, its URL to open it, the wheel to move, and the
 keys on the last line to press them (shift-drag still selects text).`,
 		options: ["no-docker", "show-secrets", "no-probe"],
@@ -136,7 +136,7 @@ Exits 1 when nothing answers.`,
 		about: `Stops what listens on PORT: says which process it is, the git checkout and
 branch it runs in and what started it, then asks. --tree also stops what started
 it (bun run dev, npm, a watcher such as nodemon, never your shell), so nothing
-starts it again. A container is docker stopped. Exits 1 when something still
+starts it again. A container is docker (or wslc) stopped. Exits 1 when something still
 runs after 3 seconds: --force kills it at once.`,
 		options: ["tree", "force", "yes", "no-docker"],
 		examples: ["nethound kill 3000", "nethound kill 5173 --tree -y"],

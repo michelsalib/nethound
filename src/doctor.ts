@@ -413,7 +413,9 @@ const wslShadowed: Rule = (snap, ls) => {
 			(name.length > 2 && cmd.includes(name))
 		)
 			return [];
-		const them = `${w.name ?? "a process"} ${w.pid}`;
+		const them = w.container
+			? `container ${w.container} (wslc)`
+			: `${w.name ?? "a process"} ${w.pid}`;
 		return [
 			{
 				rule: "wsl-port-shadowed",

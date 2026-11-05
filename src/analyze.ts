@@ -242,9 +242,10 @@ function reachOf(
 	return { scope: "interfaces", interfaces: [...names] };
 }
 
-/** The programs that hold a published port for docker: docker-proxy, Docker Desktop's, podman's. */
+/** The programs that hold a published port for docker: docker-proxy, Docker Desktop's, podman's,
+ * WSL's container host (wslc) on Windows. */
 export const DOCKER =
-	/docker|vpnkit|wslrelay|rootless|slirp4netns|gvproxy|containerd/i;
+	/docker|vpnkit|wslrelay|rootless|slirp4netns|gvproxy|containerd|^wslc$/i;
 
 const publishes = (
 	p: PublishedPort,

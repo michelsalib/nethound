@@ -68,6 +68,9 @@ $g = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties()
 } | ConvertTo-Json -Depth 5 -Compress
 `;
 
+/** The AppID of WSL's device host, which dllhost runs for wslc's containers. */
+const WSLC_APPID = "{17696EAC-9568-4CF5-BB8C-82515AAD6C09}";
+
 /** What SCRIPT prints. */
 export interface WindowsData {
 	/** Ports in Windows' IPv4 tables on 0.0.0.0, dual-stack sockets on :: included. */
@@ -272,7 +275,10 @@ export function parseWindows(
 		);
 	const processes: Process[] = (data.processes ?? []).map(
 		([pid, image, cmd, ppid, started, exe]) => {
-			const name = image.replace(/\.exe$/i, "");
+			// the dllhost that hosts WSL's containers (wslc) is told by WSL's AppID
+			const name = cmd?.toUpperCase().includes(WSLC_APPID)
+				? "wslc"
+				: image.replace(/\.exe$/i, "");
 			// without an administrator terminal, other users' command lines are not given
 			return {
 				pid,
